@@ -1,0 +1,67 @@
+# https://starship.rs/config/#prompt
+
+format = """
+$username\
+$hostname\
+$directory\
+$git_branch\
+$python$nodejs\
+$git_state\
+$git_status\
+$git_metrics\
+$cmd_duration\
+$status\
+$fill\
+$jobs\
+$aws$kubernetes$docker_context\
+$time$battery\
+$line_break\
+$character"""
+
+[fill]
+symbol = " "
+
+[git_branch]
+format = "[$symbol$branch]($style) "
+
+[git_metrics]
+# disabled = false
+
+[cmd_duration]
+format = "[$duration ]($style)"
+min_time = 2_000
+
+[status]
+disabled = false
+symbol = '✝'
+format = "[$symbol$int]($style) "
+
+[time]
+# disabled = false
+format = "[$time]($style)"
+
+[battery]
+disabled = false
+
+[nodejs]
+format = "[$symbol($version )]($style)"
+# symbol = " "
+symbol = "🦑 "
+
+[python]
+format = '[${symbol}${pyenv_prefix}(${version} )(\($virtualenv\) )]($style)'
+symbol = "🐍 "
+# symbol = " "
+
+[aws]
+disabled = true
+format = '[$symbol($profile )(\($region\) )(\[$duration\] )]($style)'
+# symbol = " "
+
+[kubernetes]
+disabled = false
+format = '[$symbol$context( \($namespace\))]($style)'
+
+[docker_context]
+disabled = true
+format = '[$symbol$context]($style) '

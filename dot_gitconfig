@@ -1,0 +1,10 @@
+[user]
+  name = Vlad Pronsky
+  email = v.pronsky@gmail.com
+[init]
+  defaultBranch = main
+[alias]
+  st = status
+
+[core]
+	excludesFile = ~/.gitignore
