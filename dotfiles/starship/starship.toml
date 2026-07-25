@@ -1,0 +1,73 @@
+# https://starship.rs/config/#prompt
+
+command_timeout = 10000
+format = """
+$username\
+$hostname\
+$directory\
+$git_branch\
+$rust$golang$nodejs$python\
+$git_state\
+$git_status\
+$git_metrics\
+$cmd_duration\
+$status\
+$fill\
+$jobs\
+$aws$kubernetes\
+$time$battery\
+$line_break\
+$character"""
+
+# right_format = """$all"""
+
+[fill]
+symbol = " "
+
+[git_branch]
+format = "[$symbol$branch]($style) "
+
+[git_metrics]
+# disabled = false
+
+[cmd_duration]
+format = "[$duration ]($style)"
+min_time = 2_000
+
+[status]
+disabled = false
+format = "[$symbol$int]($style) "
+symbol = '✝'
+
+[time]
+disabled = true
+format = "[$time]($style)"
+
+[battery]
+disabled = true
+
+[nodejs]
+format = "[$symbol($version )]($style)"
+symbol = "🐢 "
+
+[python]
+format = '[${symbol}${pyenv_prefix}(${version} )(\($virtualenv\) )]($style)'
+symbol = "🐍 "
+
+[golang]
+format = "[$symbol($version )]($style)"
+symbol = "🐹 "
+
+[rust]
+format = "[$symbol($version )]($style)"
+symbol = "🦀 "
+
+[aws]
+disabled = true
+# format = '[$symbol$profile]($style) '
+# symbol = "☁️ "
+
+[kubernetes]
+disabled = true
+# format = '[$symbol$context/$namespace]($style)'
+# symbol = "☸️ "

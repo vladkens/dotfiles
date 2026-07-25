@@ -1,0 +1,5 @@
+compact = true
+theme = auto
+auto-theme-dark = catppuccin-mocha
+auto-theme-light = catppuccin-latte
+wrap = true

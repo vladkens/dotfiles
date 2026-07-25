@@ -1,0 +1,17 @@
+[user]
+	name = vladkens
+	email = v.pronsky@gmail.com
+[init]
+	defaultBranch = main
+[push]
+	default = upstream
+[alias]
+	st = status
+	ci = !git commit -m 'ci: empty commit' --allow-empty && git push && git reset --soft HEAD~ && git push -f
+[merge]
+	conflictStyle = diff3
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true

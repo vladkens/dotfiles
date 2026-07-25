@@ -1,0 +1,44 @@
+config:
+  backup: false
+  banner: false
+  create: true
+  diff_command: git diff --no-index --color=always -- {0} {1}
+  dotpath: dotfiles
+  link_dotfile_default: relative
+  showdiff: true
+
+dotfiles:
+  fish:
+    src: fish
+    dst: ~/.config/fish
+    link: link_children
+  ghostty:
+    src: ghostty
+    dst: ~/.config/ghostty
+  git:
+    src: git
+    dst: ~/.config/git
+  mise:
+    src: mise
+    dst: ~/.config/mise
+  revdiff:
+    src: revdiff/config
+    dst: ~/.config/revdiff/config
+    chmod: "600"
+  starship:
+    src: starship/starship.toml
+    dst: ~/.config/starship.toml
+  wezterm:
+    src: wezterm
+    dst: ~/.config/wezterm
+
+profiles:
+  default:
+    dotfiles:
+      - fish
+      - ghostty
+      - git
+      - mise
+      - revdiff
+      - starship
+      - wezterm
