@@ -1,0 +1,49 @@
+[
+	{
+		"keys": ["super+shift+l"],
+		"command": "reindent",
+		"args": { "single_line": false }
+	},
+	{
+		"keys": ["super+shift+up"],
+		"command": "select_lines",
+		"args": { "forward": false }
+	},
+	{
+		"keys": ["super+shift+down"],
+		"command": "select_lines",
+		"args": { "forward": true }
+	},
+	{
+		"keys": ["super+forward_slash"],
+		"command": "run_macro_file",
+		"args": {
+			"file": "Packages/User/comment_line_and_move_down.sublime-macro"
+		}
+	},
+	{
+		"keys": ["super+d"],
+		"command": "duplicate_line"
+	},
+	{
+		"keys": ["super+l"],
+		"command": "show_overlay",
+		"args": { "overlay": "goto", "text": ":" }
+	},
+	{
+		"keys": ["ctrl+g"],
+		"command": "noop"
+	},
+	{
+		"keys": ["super+equals"],
+		"command": "increase_font_size"
+	},
+	{
+		"keys": ["super+minus"],
+		"command": "decrease_font_size"
+	},
+	{
+		"keys": ["super+0"],
+		"command": "reset_font_size"
+	}
+]

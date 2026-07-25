@@ -11,7 +11,7 @@ dotfiles:
   fish:
     src: fish
     dst: ~/.config/fish
-    link: link_children
+    link: link_children # fish writes fish_variables directly into this dir
   ghostty:
     src: ghostty
     dst: ~/.config/ghostty
@@ -28,9 +28,21 @@ dotfiles:
   starship:
     src: starship/starship.toml
     dst: ~/.config/starship.toml
+  sublime:
+    src: sublime
+    dst: ~/Library/Application Support/Sublime Text/Packages/User
+    link: link_children # dir is shared with Package Control / other packages
+  vscode:
+    src: vscode
+    dst: ~/Library/Application Support/Code/User
+    link: link_children # dir also holds History/globalStorage/workspaceStorage/sync
   wezterm:
     src: wezterm
     dst: ~/.config/wezterm
+  zed:
+    src: zed
+    dst: ~/.config/zed
+    link: link_children # zed writes prompts/ (LMDB) and themes/ directly into this dir
 
 profiles:
   default:
@@ -41,4 +53,7 @@ profiles:
       - mise
       - revdiff
       - starship
+      - sublime
+      - vscode
       - wezterm
+      - zed
