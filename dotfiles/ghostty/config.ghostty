@@ -1,0 +1,12 @@
+font-family = JetBrains Mono
+font-style = Medium
+font-size = 13
+
+macos-option-as-alt = left
+
+# font-feature = -liga
+# font-feature = -clig
+# font-feature = -salt
+
+theme = dark:Catppuccin Macchiato,light:Catppuccin Latte
+shell-integration-features = ssh-terminfo,ssh-env
