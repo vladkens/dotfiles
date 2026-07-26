@@ -44,10 +44,7 @@
     "key": "cmd+/",
     "command": "runCommands",
     "args": {
-      "commands": [
-        "editor.action.commentLine",
-        "cursorDown"
-      ]
+      "commands": ["editor.action.commentLine", "cursorDown"]
     },
     "when": "editorTextFocus && !editorReadonly"
   },
