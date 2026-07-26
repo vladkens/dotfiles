@@ -1,0 +1,17 @@
+{
+  "name": "codex-tools",
+  "version": "0.1.0+codex.20260726034843",
+  "description": "Personal Codex hooks and utilities",
+  "author": {
+    "name": "Local developer"
+  },
+  "interface": {
+    "displayName": "Codex Tools",
+    "shortDescription": "Personal hooks and utilities for Codex.",
+    "longDescription": "A local collection of reusable Codex hooks and supporting utilities.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": ["Hooks"],
+    "defaultPrompt": "Show the utilities provided by Codex Tools."
+  }
+}

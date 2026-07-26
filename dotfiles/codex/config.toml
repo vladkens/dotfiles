@@ -1,0 +1,83 @@
+# https://learn.chatgpt.com/docs/config-file/config-reference
+# https://learn.chatgpt.com/docs/permissions
+
+check_for_update_on_startup = false
+default_permissions = "dev_workspace"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+personality = "pragmatic"
+service_tier = "default"
+
+[tui]
+show_tooltips = false
+status_line = ["model-with-reasoning", "current-dir", "context-remaining", "five-hour-limit", "weekly-limit"]
+theme = "catppuccin-macchiato"
+session_picker_view = "dense"
+
+[permissions.dev_workspace]
+extends = ":workspace"
+
+[permissions.dev_workspace.filesystem]
+"~/.cache/uv" = "write"
+"~/.cargo/.global-cache" = "write"
+"~/.cargo/.package-cache-mutate" = "write"
+"~/.cargo/.package-cache" = "write"
+"~/.cargo/git" = "write"
+"~/.cargo/registry" = "write"
+"~/Library/Caches/pnpm" = "write"
+"~/Library/pnpm/store" = "write"
+
+# [permissions.dev_workspace.filesystem.":workspace_roots"]
+# "**/*.env" = "deny"
+# "**/config.local.fish" = "deny"
+
+[permissions.dev_workspace.network]
+enabled = false
+# allow_local_binding = false
+# enabled = true
+# mode = "limited"
+
+# [permissions.dev_workspace.network.domains]
+# "crates.io" = "allow"
+# "files.pythonhosted.org" = "allow"
+# "index.crates.io" = "allow"
+# "pypi.org" = "allow"
+# "registry.npmjs.org" = "allow"
+# "static.crates.io" = "allow"
+
+[plugins."browser@openai-bundled"]
+enabled = false
+
+[plugins."documents@openai-primary-runtime"]
+enabled = false
+
+[plugins."pdf@openai-primary-runtime"]
+enabled = false
+
+[plugins."spreadsheets@openai-primary-runtime"]
+enabled = false
+
+[plugins."presentations@openai-primary-runtime"]
+enabled = false
+
+[plugins."template-creator@openai-primary-runtime"]
+enabled = false
+
+[plugins."codex-tools@dotfiles"]
+enabled = true
+
+[features]
+js_repl = false
+memories = false
+# network_proxy = true
+
+[notice]
+hide_rate_limit_model_nudge = true
+
+[marketplaces.dotfiles]
+source_type = "local"
+
+[hooks.state]
+
+[hooks.state."codex-tools@dotfiles:hooks/hooks.json:pre_tool_use:0:0"]
+trusted_hash = "sha256:24ca7133ad46d277e0d8c6ead7201ceff251cc2c1873a5b8aa0749aaaedd383f"

@@ -5,6 +5,8 @@
 	defaultBranch = main
 [push]
 	default = upstream
+[core]
+	pager = less -+X -R
 [alias]
 	st = status
 	ci = !git commit -m 'ci: empty commit' --allow-empty && git push && git reset --soft HEAD~ && git push -f
