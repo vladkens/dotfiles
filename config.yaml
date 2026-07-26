@@ -8,6 +8,14 @@ config:
   showdiff: true
 
 dotfiles:
+  codex:
+    src: codex
+    dst: ~/.codex
+    link: link_children # dir also holds auth.json/history/sessions/sqlite state
+  codex-skills:
+    src: codex-skills
+    dst: ~/.codex/skills
+    link: link_children # keeps .system/ (bundled by codex) untouched
   fish:
     src: fish
     dst: ~/.config/fish
@@ -47,6 +55,8 @@ dotfiles:
 profiles:
   default:
     dotfiles:
+      - codex
+      - codex-skills
       - fish
       - ghostty
       - git

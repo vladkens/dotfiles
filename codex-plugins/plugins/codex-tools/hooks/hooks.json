@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${PLUGIN_ROOT}/hooks/normalize-home-paths.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
