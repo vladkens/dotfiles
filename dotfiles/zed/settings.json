@@ -15,27 +15,22 @@
   "telemetry": {
     "diagnostics": false,
     "metrics": false,
-    "anthropic_retention": false,
+    "anthropic_retention": false
   },
   "ui_font_size": 15.0,
   "buffer_font_size": 15,
   "theme": { "mode": "system", "light": "One Light", "dark": "One Dark" },
   "project_panel": { "dock": "left", "hide_root": true },
   "wrap_guides": [100],
-  "file_scan_exclusions": [
-    "**/.DS_Store",
-    "**/.git",
-    "**/node_modules",
-    "**/pnpm-lock.yaml",
-  ],
+  "file_scan_exclusions": ["**/.DS_Store", "**/.git", "**/node_modules", "**/pnpm-lock.yaml"],
   "git": {
-    "inline_blame": { "enabled": true, "location": "status_bar" },
+    "inline_blame": { "enabled": true, "location": "status_bar" }
   },
   "gutter": {
     "bookmarks": false,
     "breakpoints": false,
     "min_line_number_digits": 2,
-    "runnables": false,
+    "runnables": false
   },
-  "format_on_save": "on",
+  "format_on_save": "on"
 }

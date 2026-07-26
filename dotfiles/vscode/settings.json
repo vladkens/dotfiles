@@ -2,21 +2,21 @@
   "[markdown]": {
     "editor.wordWrap": "wordWrapColumn",
     "editor.wordWrapColumn": 100,
-    "diffEditor.ignoreTrimWhitespace": true,
+    "diffEditor.ignoreTrimWhitespace": true
   },
   "[plaintext]": {
     "editor.wordWrap": "wordWrapColumn",
-    "editor.wordWrapColumn": 100,
+    "editor.wordWrapColumn": 100
   },
   "[python]": {
     "editor.codeActionsOnSave": {
-      "source.organizeImports": "explicit",
+      "source.organizeImports": "explicit"
     },
     "editor.defaultFormatter": null,
-    "editor.tabSize": 4,
+    "editor.tabSize": 4
   },
   "[terraform]": {
-    "editor.defaultFormatter": "hashicorp.terraform",
+    "editor.defaultFormatter": "hashicorp.terraform"
   },
   "clang-format.executable": "/opt/homebrew/bin/clang-format",
   "clang-format.language.c.style": "{ColumnLimit: 100, AllowShortIfStatementsOnASingleLine: AllIfsAndElse, IndentPPDirectives: BeforeHash, AllowShortBlocksOnASingleLine: Empty, AllowShortLoopsOnASingleLine: true}",
@@ -55,7 +55,7 @@
     "*.xml": "html",
     "*.yaml": "yaml",
     ".env.*": "env",
-    "Dockerfile.*": "dockerfile",
+    "Dockerfile.*": "dockerfile"
   },
   "files.exclude": {
     "**/.infracost": true,
@@ -67,7 +67,7 @@
     "**/.venv": true,
     "**/.yarn": true,
     "**/__pycache__": true,
-    "**/terraform.tfstate*": true,
+    "**/terraform.tfstate*": true
   },
   "git.openRepositoryInParentFolders": "never",
   "gitblame.statusBarMessageFormat": "${author.name}, ${time.ago}",
@@ -100,7 +100,7 @@
   "workbench.editor.languageDetection": false,
   "workbench.editor.wrapTabs": true,
   "workbench.editorAssociations": {
-    "*.db": "sqlite-viewer.option",
+    "*.db": "sqlite-viewer.option"
   },
   "workbench.startupEditor": "none",
   "github.copilot.enable": {
@@ -112,7 +112,7 @@
     "jsonc": true,
     "instructions": true,
     "properties": false,
-    "env": false,
+    "env": false
   },
   "rust-analyzer.showDependenciesExplorer": false,
   "git.blame.statusBarItem.enabled": false,
@@ -135,5 +135,5 @@
   "window.titleBarStyle": "native",
   "window.customTitleBarVisibility": "never",
   "chat.disableAIFeatures": true,
-  "prettier.requireConfig": true,
+  "prettier.requireConfig": true
 }
