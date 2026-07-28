@@ -3,21 +3,20 @@
 
 check_for_update_on_startup = false
 default_permissions = "dev_workspace"
-model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
 personality = "pragmatic"
-service_tier = "default"
 
 [tui]
-show_tooltips = false
-status_line = ["model-with-reasoning", "current-dir", "context-remaining", "five-hour-limit", "weekly-limit"]
-theme = "catppuccin-macchiato"
 session_picker_view = "dense"
+show_tooltips = false
+status_line = ["model-with-reasoning", "current-dir", "context-remaining", "five-hour-limit", "weekly-limit", "thread-id"]
+status_line_use_colors = true
+theme = "catppuccin-macchiato"
 
 [permissions.dev_workspace]
 extends = ":workspace"
 
 [permissions.dev_workspace.filesystem]
+"~/.worktrees" = "write"
 "~/.cache/uv" = "write"
 "~/.cargo/.global-cache" = "write"
 "~/.cargo/.package-cache-mutate" = "write"
@@ -80,4 +79,4 @@ source_type = "local"
 [hooks.state]
 
 [hooks.state."codex-tools@dotfiles:hooks/hooks.json:pre_tool_use:0:0"]
-trusted_hash = "sha256:24ca7133ad46d277e0d8c6ead7201ceff251cc2c1873a5b8aa0749aaaedd383f"
+trusted_hash = "sha256:85159d2410a5a675c2d08ea083018fe71db682021e18f3778306bcf87b5c5cf2"

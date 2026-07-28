@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${PLUGIN_ROOT}/hooks/normalize-home-paths.mjs\"",
+            "command": "\"${PLUGIN_ROOT}/hooks/normalize-home-paths.py\"",
             "timeout": 5
           }
         ]
