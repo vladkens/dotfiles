@@ -1,6 +1,13 @@
 # dotfiles
 
-Configurations are grouped by application under `dotfiles/`. [Dotdrop](https://github.com/deadc0de6/dotdrop) maps them to their real paths using `config.yaml`.
+Configuration sources are grouped by application under `dotfiles/`. [Dotdrop](https://github.com/deadc0de6/dotdrop) maps them to their real paths using `dotdrop.yaml`. Codex skills and plugins remain separate because they are extensions rather than ordinary configuration.
+
+## Repository Layout
+
+- Keep application configs under `dotfiles/<application>/` and preserve their directory structure.
+- If an application mixes configuration with local state in the same directory, manage only the files and subdirectories that belong to the configuration.
+- Put files installed directly in `$HOME` at the root of `dotfiles/`.
+- Keep Codex skills and plugins separate; keep repository tooling in `scripts/` or the repository root.
 
 ## Usage
 
@@ -20,7 +27,7 @@ After linking, changes made through application UIs modify the repository files 
 
 [chezmoi](https://www.chezmoi.io/) is mature and powerful, but its encoded source tree and templating model are more complex than needed here. [yadm](https://yadm.io/) makes UI edits natural by using `$HOME` as a Git work tree, but the repository still mirrors home paths instead of grouping files by application.
 
-[Dotdrop](https://dotdrop.readthedocs.io/) was selected because it keeps an explicit `src`/`dst` map, supports both copies and links, allows a clean application-oriented repository layout, and can synchronize detached changes back into the repository.
+[Dotdrop](https://dotdrop.readthedocs.io/) was selected because it keeps an explicit `src`/`dst` map, supports both copies and links, lets the source layout stay independent from destination paths, and can synchronize detached changes back into the repository.
 
 ## Codex Config Notes
 
