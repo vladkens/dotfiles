@@ -1,6 +1,6 @@
 actions:
   codex-plugins: >-
-    codex plugin marketplace add "{{@@ _dotdrop_dotpath @@}}/../codex-plugins" &&
+    codex plugin marketplace add "{{@@ _dotdrop_dotpath @@}}/codex-plugins" &&
     codex plugin add codex-tools@dotfiles
   # Terraform does not create this directory, so the plugin cache will not work without it.
   terraform-plugin-cache: "mkdir -p ~/.terraform.d/plugin-cache"
@@ -10,13 +10,13 @@ config:
   banner: false
   create: true
   diff_command: git diff --no-index --color=always -- {0} {1}
-  dotpath: dotfiles
+  dotpath: .
   link_dotfile_default: relative
   showdiff: true
 
 dotfiles:
   codex:
-    src: codex
+    src: dotfiles/codex
     dst: ~/.codex
     link: link_children # dir also holds auth.json/history/sessions/sqlite state
     actions:
@@ -26,46 +26,46 @@ dotfiles:
     dst: ~/.codex/skills
     link: link_children # keeps .system/ (bundled by codex) untouched
   fish:
-    src: fish
+    src: dotfiles/fish
     dst: ~/.config/fish
     link: link_children # fish writes fish_variables directly into this dir
   ghostty:
-    src: ghostty
+    src: dotfiles/ghostty
     dst: ~/.config/ghostty
   git:
-    src: git
+    src: dotfiles/git
     dst: ~/.config/git
   mise:
-    src: mise
+    src: dotfiles/mise
     dst: ~/.config/mise
   npm:
-    src: home/npmrc
+    src: dotfiles/npmrc
     dst: ~/.npmrc
   revdiff:
-    src: revdiff/config
+    src: dotfiles/revdiff/config
     dst: ~/.config/revdiff/config
     chmod: "600"
   starship:
-    src: starship/starship.toml
+    src: dotfiles/starship/starship.toml
     dst: ~/.config/starship.toml
   sublime:
-    src: sublime
+    src: dotfiles/sublime
     dst: ~/Library/Application Support/Sublime Text/Packages/User
     link: link_children # dir is shared with Package Control / other packages
   terraform:
-    src: home/terraformrc
+    src: dotfiles/terraformrc
     dst: ~/.terraformrc
     actions:
       - terraform-plugin-cache
   vscode:
-    src: vscode
+    src: dotfiles/vscode
     dst: ~/Library/Application Support/Code/User
     link: link_children # dir also holds History/globalStorage/workspaceStorage/sync
   wezterm:
-    src: wezterm
+    src: dotfiles/wezterm
     dst: ~/.config/wezterm
   zed:
-    src: zed
+    src: dotfiles/zed
     dst: ~/.config/zed
     link: link_children # zed writes prompts/ (LMDB) and themes/ directly into this dir
 

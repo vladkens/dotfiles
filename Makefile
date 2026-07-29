@@ -1,4 +1,4 @@
-DOTDROP := dotdrop --no-banner --cfg=$(CURDIR)/config.yaml
+DOTDROP := dotdrop --no-banner --cfg=$(CURDIR)/dotdrop.yaml
 DOTDROP_PROFILE := --profile=default
 
 .PHONY: prepare sync
