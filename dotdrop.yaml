@@ -57,6 +57,12 @@ dotfiles:
     dst: ~/.terraformrc
     actions:
       - terraform-plugin-cache
+  tmux:
+    src: dotfiles/tmux.conf
+    dst: ~/.tmux.conf
+  vim:
+    src: dotfiles/vim
+    dst: ~/.config/vim
   vscode:
     src: dotfiles/vscode
     dst: ~/Library/Application Support/Code/User
@@ -83,6 +89,8 @@ profiles:
       - starship
       - sublime
       - terraform
+      - tmux
+      - vim
       - vscode
       - wezterm
       - zed
