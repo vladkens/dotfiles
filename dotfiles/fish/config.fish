@@ -23,6 +23,8 @@ set -x NEXT_TELEMETRY_DISABLED 1
 set -x NO_UPDATE_NOTIFIER 1
 set -x TURBO_TELEMETRY_DISABLED 1
 set -x COREPACK_ENABLE_UPDATE_NOTIFIER 0
+set -x PNPM_CONFIG_UPDATE_NOTIFIER false
+set -x PRISMA_HIDE_UPDATE_MESSAGE 1
 
 set -x DOCKER_BUILDKIT 1
 set -x DOCKER_HOST unix://$HOME/.colima/default/docker.sock
@@ -52,9 +54,10 @@ if test -f ~/.config/fish/config.local.fish
 end
 
 # --- Aliases ---
+alias reload='source ~/.config/fish/config.fish'
 alias ls='eza --group-directories-first'
 alias ll='eza --all --long --group-directories-first'
-alias reload='source ~/.config/fish/config.fish'
+alias ta='tmux new-session -A -s main'
 alias dfree='docker rmi -f $(docker images -q) && docker system prune -a -f'
 alias dcu='docker compose up -d'
 alias dcd='docker compose down'
