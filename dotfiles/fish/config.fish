@@ -13,10 +13,6 @@ fish_add_path -g /opt/homebrew/opt/libpq/bin
 fish_add_path -g /opt/homebrew/sbin
 fish_add_path -g /opt/homebrew/bin
 
-fish_add_path -g /usr/local/bin
-fish_add_path -g /usr/sbin
-fish_add_path -g /sbin
-
 # --- Environment ---
 set -x DO_NOT_TRACK 1
 set -x NEXT_TELEMETRY_DISABLED 1

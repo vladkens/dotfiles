@@ -32,7 +32,7 @@ config.use_fancy_tab_bar = false
 config.tab_bar_at_bottom = true
 config.tab_max_width = 32
 config.show_new_tab_button_in_tab_bar = false
--- config.hide_tab_bar_if_only_one_tab = true -- sometimes procude wrong window size on maximize
+config.hide_tab_bar_if_only_one_tab = true
 
 config.default_cursor_style = 'BlinkingBar'
 config.animation_fps = 1
@@ -41,42 +41,29 @@ config.prefer_egl = true
 config.max_fps = 60
 config.enable_kitty_keyboard = false
 
-config.enable_scroll_bar = true
+config.enable_scroll_bar = false
 config.scrollback_lines = 10000
 
 -- makes wezterm to work like tmux; see also: https://bower.sh/zmx-session-persistence
 -- config.default_gui_startup_args = { 'connect', 'unix' }
 config.window_close_confirmation = 'NeverPrompt'
 
-local function maximize_window(window)
+local function set_default_window_size(window)
   if not window.gui_window then return end
 
-  local screen = wezterm.gui.screens().active
   local guiwin = window:gui_window()
-  if not screen or not guiwin then return end
+  if not guiwin then return end
 
-  -- window:gui_window():maximize() -- have long animation
-  guiwin:set_position(screen.x, screen.y)
-  guiwin:set_inner_size(screen.width, screen.height)
+  -- set_inner_size takes physical/backing pixels, not logical points,
+  -- so scale by dpi (96 = non-Retina) to match the requested logical size
+  local scale = guiwin:get_dimensions().dpi / 96
+  guiwin:set_inner_size(960 * scale, 720 * scale)
 end
 
 -- https://github.com/wez/wezterm/issues/3299#issuecomment-2145712082
 wezterm.on("gui-startup", function(cmd)
 	local tab, pane, window = mux.spawn_window(cmd or {})
-  maximize_window(window)
-end)
-
-wezterm.on("gui-attached", function(window)
-  local workspace = mux.get_active_workspace()
-  for _, window in ipairs(mux.all_windows()) do
-    if window:get_workspace() == workspace then
-      maximize_window(window)
-    end
-  end
-end)
-
-wezterm.on("window-resized", function(window, pane)
-  maximize_window(window)
+  set_default_window_size(window)
 end)
 
 -- see also https://wezterm.org/config/lua/wezterm/battery_info.html
