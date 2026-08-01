@@ -27,7 +27,13 @@ prefix_rule(pattern=["docker", "compose", "ps"], decision="allow")
 prefix_rule(pattern=["docker", "image", ["inspect", "ls"]], decision="allow")
 prefix_rule(pattern=["docker", ["logs", "ps"]], decision="allow")
 
-prefix_rule(pattern=["node", "~/.codex/skills/.system/openai-docs/scripts/fetch-codex-manual.mjs"], decision="allow")
-prefix_rule(pattern=["uv", "run", "--with", "pyyaml", "~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py"], decision="allow")
-prefix_rule(pattern=["uv", "run", "--with", "pyyaml", "~/.codex/skills/.system/skill-creator/scripts/quick_validate.py"], decision="allow")
-prefix_rule(pattern=["uv", "run", ["ruff", "pyright"]], decision="allow")
+prefix_rule(pattern=["uv", "run", ["ruff", "pyright", "ty"]], decision="allow")
+prefix_rule(pattern=["uvx", "ruff"], decision="allow")
+
+prefix_rule(pattern=["node", [
+  "~/.codex/skills/.system/openai-docs/scripts/fetch-codex-manual.mjs"
+]], decision="allow")
+prefix_rule(pattern=["uv", "run", "--with", "pyyaml", [
+  "~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py",
+  "~/.codex/skills/.system/skill-creator/scripts/quick_validate.py"]
+], decision="allow")
