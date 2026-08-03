@@ -1,13 +1,13 @@
 # dotfiles
 
-Configuration sources are grouped by application under `dotfiles/`. [Dotdrop](https://github.com/deadc0de6/dotdrop) maps them to their real paths using `dotdrop.yaml`. Codex skills and plugins remain separate because they are extensions rather than ordinary configuration.
+Configuration sources are grouped by application under `dotfiles/`. [Dotdrop](https://github.com/deadc0de6/dotdrop) maps them to their real paths using `dotdrop.yaml`. Codex/Claude skills and plugins remain separate because they are extensions rather than ordinary configuration.
 
 ## Repository Layout
 
 - Keep application configs under `dotfiles/<application>/` and preserve their directory structure.
 - If an application mixes configuration with local state in the same directory, manage only the files and subdirectories that belong to the configuration.
 - Put files installed directly in `$HOME` at the root of `dotfiles/`.
-- Keep Codex skills and plugins separate; keep repository tooling in `scripts/` or the repository root.
+- Keep Codex/Claude skills and plugins separate; keep repository tooling in `scripts/` or the repository root.
 
 ## Usage
 

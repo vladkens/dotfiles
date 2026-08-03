@@ -1,0 +1,63 @@
+{
+  "cleanupPeriodDays": 9999,
+  "env": {
+    "DISABLE_AUTOUPDATER": "1"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "allow": [
+      "Bash(gh issue list:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)",
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:pnpm.io)"
+    ],
+    "deny": ["Read(./.env)", "Read(./.env.*)", "Read(./secrets/**)", "Read(./configs/**)"],
+    "defaultMode": "default"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "c=$(jq -r '.tool_input.command // empty'); case \"$c\" in *' git -C '*|'git -C '*) printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"git -C <path> is banned - run plain git <subcommand> in the cwd instead\"}}' ;; *) printf '{}' ;; esac"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline.sh",
+    "padding": 0
+  },
+  "enabledPlugins": {
+    "brainstorm@umputun-cc-thingz": true,
+    "planning@umputun-cc-thingz": true
+  },
+  "extraKnownMarketplaces": {
+    "umputun-cc-thingz": {
+      "source": {
+        "source": "github",
+        "repo": "umputun/cc-thingz"
+      }
+    }
+  },
+  "spinnerTipsEnabled": false,
+  "effortLevel": "xhigh",
+  "autoUpdatesChannel": "stable",
+  "autoMemoryEnabled": false,
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark-ansi",
+  "editorMode": "normal",
+  "remoteControlAtStartup": false
+}
