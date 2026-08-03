@@ -15,6 +15,14 @@ config:
   showdiff: true
 
 dotfiles:
+  claude:
+    src: dotfiles/claude
+    dst: ~/.claude
+    link: link_children # dir also holds history/sessions/projects/plugins/cache state
+  claude-skills:
+    src: claude-skills
+    dst: ~/.claude/skills
+    link: link_children # dir also holds a stray empty .git; leave it alone
   codex:
     src: dotfiles/codex
     dst: ~/.codex
@@ -78,6 +86,8 @@ dotfiles:
 profiles:
   default:
     dotfiles:
+      - claude
+      - claude-skills
       - codex
       - codex-skills
       - fish
