@@ -2,6 +2,12 @@ actions:
   codex-plugins: >-
     codex plugin marketplace add "{{@@ _dotdrop_dotpath @@}}/codex-plugins" &&
     codex plugin add codex-tools@dotfiles
+  _prune-stale-links: >-
+    "{{@@ _dotdrop_dotpath @@}}/scripts/dotdrop-prune-links.py"
+    "{{@@ _dotfile_link @@}}"
+    "{{@@ _dotfile_abs_src @@}}"
+    "{{@@ _dotfile_abs_dst @@}}"
+    "{{@@ _dotdrop_workdir @@}}"
   # Terraform does not create this directory, so the plugin cache will not work without it.
   terraform-plugin-cache: "mkdir -p ~/.terraform.d/plugin-cache"
 
@@ -9,12 +15,18 @@ config:
   backup: false
   banner: false
   create: true
+  default_actions:
+    - _prune-stale-links
   diff_command: git diff --no-index --color=always -- {0} {1}
   dotpath: .
   link_dotfile_default: relative
   showdiff: true
 
 dotfiles:
+  bin:
+    src: dotfiles/bin
+    dst: ~/.local/bin
+    link: link_children # keep commands installed by other tools untouched
   claude:
     src: dotfiles/claude
     dst: ~/.claude
@@ -86,6 +98,7 @@ dotfiles:
 profiles:
   default:
     dotfiles:
+      - bin
       - claude
       - claude-skills
       - codex

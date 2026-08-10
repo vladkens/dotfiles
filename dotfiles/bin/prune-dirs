@@ -1,0 +1,133 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = []
+# ///
+
+import argparse
+import os
+import subprocess
+from pathlib import Path
+
+PROTECTED_DIRS = {".git", ".hg", ".jj", ".svn"}
+DS_STORE_NAME = ".ds_store"
+
+
+def find_git_root(root: Path) -> Path | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        raise SystemExit("git is required to apply .gitignore rules") from None
+
+    if result.returncode != 0:
+        return None
+
+    return Path(result.stdout.strip()).resolve()
+
+
+def find_ignored_dirs(git_root: Path | None, directories: list[Path]) -> set[Path]:
+    if git_root is None or not directories:
+        return set()
+
+    relative_paths = [directory.relative_to(git_root).as_posix() for directory in directories]
+    result = subprocess.run(
+        ["git", "-C", str(git_root), "check-ignore", "--no-index", "-z", "--stdin"],
+        input="\0".join(relative_paths) + "\0",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if result.returncode not in {0, 1}:
+        message = result.stderr.strip() or "git check-ignore failed"
+        raise SystemExit(message)
+
+    ignored = {path for path in result.stdout.split("\0") if path}
+    return {
+        directory
+        for directory, relative_path in zip(directories, relative_paths, strict=True)
+        if relative_path in ignored
+    }
+
+
+def is_ds_store_file(path: Path) -> bool:
+    return path.name.casefold() == DS_STORE_NAME and not path.is_dir()
+
+
+def find_empty_dirs(root: Path, git_root: Path | None) -> list[Path]:
+    if root != git_root and root in find_ignored_dirs(git_root, [root]):
+        return []
+
+    visited = []
+
+    for current, dirs, _ in os.walk(root, topdown=True, followlinks=False):
+        directory = Path(current)
+        candidates = [directory / name for name in dirs if name not in PROTECTED_DIRS]
+        ignored = find_ignored_dirs(git_root, candidates)
+        dirs[:] = [candidate.name for candidate in candidates if candidate not in ignored]
+        visited.append(directory)
+
+    empty = set()
+
+    for directory in reversed(visited):
+        if directory == root:
+            continue
+
+        entries = list(directory.iterdir())
+        if all(is_ds_store_file(entry) or entry in empty for entry in entries):
+            empty.add(directory)
+
+    return sorted(empty, key=lambda path: len(path.parts), reverse=True)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Prune empty directories recursively.")
+    parser.add_argument(
+        "root",
+        nargs="?",
+        type=Path,
+        default=Path.cwd(),
+        help="directory to clean (default: current directory)",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="remove the directories instead of only printing them",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    root = args.root.expanduser().resolve()
+
+    if not root.is_dir():
+        raise SystemExit(f"not a directory: {root}")
+
+    if root.name in PROTECTED_DIRS:
+        raise SystemExit(f"refusing to clean protected directory: {root}")
+
+    git_root = find_git_root(root)
+    empty_dirs = find_empty_dirs(root, git_root)
+    action = "Removed" if args.apply else "Would remove"
+
+    for directory in empty_dirs:
+        if args.apply:
+            for entry in directory.iterdir():
+                if is_ds_store_file(entry):
+                    entry.unlink()
+            directory.rmdir()
+        print(directory.relative_to(root))
+
+    noun = "directory" if len(empty_dirs) == 1 else "directories"
+    print(f"{action} {len(empty_dirs)} empty {noun}.")
+
+
+if __name__ == "__main__":
+    main()

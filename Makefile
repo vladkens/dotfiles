@@ -5,7 +5,7 @@ DOTDROP_PROFILE := --profile=default
 
 prepare: # default command
 	uvx ruff format .
-	npx prettier --write --log-level warn .
+	pnpm dlx prettier --write --log-level warn .
 
 sync: # create or restore managed links
 	git config --local filter.codex-config.clean '"$(CURDIR)/scripts/git-diff-codex-config.py"'

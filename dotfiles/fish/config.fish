@@ -50,7 +50,6 @@ if test -f ~/.config/fish/config.local.fish
 end
 
 # --- Aliases ---
-alias reload='source ~/.config/fish/config.fish'
 alias ls='eza --group-directories-first'
 alias ll='eza --all --long --group-directories-first'
 alias ta='tmux new-session -A -s main'
@@ -63,6 +62,10 @@ alias pr-open='gh pr view --web'
 alias pr-checkout='gh pr checkout'
 
 # --- Functions ---
+
+function reload --no-scope-shadowing --description 'Reload Fish configuration'
+	source ~/.config/fish/config.fish
+end
 
 function fish_title
 	prompt_pwd
