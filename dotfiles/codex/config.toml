@@ -79,4 +79,7 @@ source_type = "local"
 [hooks.state]
 
 [hooks.state."codex-tools@dotfiles:hooks/hooks.json:pre_tool_use:0:0"]
-trusted_hash = "sha256:85159d2410a5a675c2d08ea083018fe71db682021e18f3778306bcf87b5c5cf2"
+trusted_hash = "sha256:26b1a4f0b9a097e8f46d0db39efb93e7bb8c906c4f2ef092680c167deb2b1576"
+
+[hooks.state."codex-tools@dotfiles:hooks/hooks.json:permission_request:0:0"]
+trusted_hash = "sha256:693ae2289c4e6978086fca47bc1bcf79d7bf8db69b10d555db7b543bff008d31"
