@@ -181,8 +181,8 @@ Do not add a trailing `---` after the final release block.
 Format rules:
 
 - `–` is an en-dash (U+2013), not a hyphen.
-- For past releases use the **tag date** (from `git log -1 --format=%as`), not today's date.
-- For the current unreleased version use **today's date**.
+- For every version that has a matching tag, use the **tag date** from `git log -1 --format=%as`.
+- Use **today's date** for the current version only when it does not have a matching tag. When adding new changes to an existing entry for that version, update its header date to today.
 - Full Changelog uses three dots `...` (GitHub compare syntax).
 - If no previous tag: use `.../commits/v<version>` instead.
 - If remote is not GitHub: omit Full Changelog line.

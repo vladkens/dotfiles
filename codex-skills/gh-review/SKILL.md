@@ -1,11 +1,15 @@
 ---
 name: gh-review
-description: Review a GitHub pull request with gh, including its diff, checks, discussion, project context, tests, and independent read-only reviewers. Use when the user asks to review, inspect, or check a GitHub PR.
+description: Review a GitHub pull request comprehensively with gh and independent reviewers. Use only when the user explicitly asks for a thorough or formal PR review, not for inspection, explanation, a quick take, or a targeted question.
 ---
 
 # GitHub PR Review
 
 Review a pull request as a project maintainer and report only actionable findings.
+
+## Scope
+
+If the requested work is not a full review, stop before gathering exhaustive metadata or launching subagents and handle it with the smallest direct inspection that answers it.
 
 ## Resolve And Gather
 

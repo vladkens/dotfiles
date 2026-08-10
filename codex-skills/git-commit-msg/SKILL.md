@@ -58,7 +58,7 @@ Do not introduce a Conventional Commit type when the project history uses plain 
 Produce **one** commit message that:
 
 - Matches the presence or absence of types and scopes in the project history
-- Uses `<type>/<scope>: <description>` for scoped changes only when typed messages are established but the scope syntax is unclear
+- Uses a scope only when the project history establishes its syntax
 - Uses lowercase for type and scope
 - Matches the project's capitalization; otherwise starts the description with a lowercase verb
 - Is concise: subject line ≤ 72 characters
@@ -68,11 +68,9 @@ If the changes span multiple concerns, pick the dominant one for the subject. Do
 
 ## Step 4: Output
 
-Always respond with a plain text message. Do not use Codex interactive `request_user_input`
-menus for this skill, even when they are available.
+Always respond with a plain text message. Do not use Codex interactive `request_user_input` menus for this skill, even when they are available.
 
-Show the generated commit message first, then always end the response with numbered
-options. The user must be able to reply with a number.
+Show the generated commit message first, then always end the response with numbered options. The user must be able to reply with a number.
 
 Use this format:
 

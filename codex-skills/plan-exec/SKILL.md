@@ -1,6 +1,6 @@
 ---
 name: plan-exec
-description: Execute a specific docs/plans implementation plan autonomously in a temporary worktree on a new branch, with task commits and review passes. Use when the user invokes $plan-exec or explicitly asks for autonomous plan execution with commits.
+description: Execute a specific implementation plan autonomously in a temporary Git worktree. Use when the user invokes $plan-exec or explicitly asks for autonomous plan execution with commits.
 ---
 
 # Plan Exec

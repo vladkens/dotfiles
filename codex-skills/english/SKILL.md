@@ -1,6 +1,6 @@
 ---
 name: english
-description: Translate supplied text into English or improve its English wording. Use when the user explicitly asks for translation, proofreading, correction, simplification, or polishing.
+description: Translate the user's outgoing text into English or improve its English wording. Use when the user asks to translate or edit text they are composing, not for ordinary editing of project files.
 ---
 
 # English
