@@ -1,39 +1,61 @@
+# Shell utilities
 prefix_rule(pattern=["base64"], decision="allow")
+prefix_rule(pattern=["jq"], decision="allow")
 prefix_rule(pattern=["nl"], decision="allow")
 prefix_rule(pattern=["ps", "-axo"], decision="allow")
 prefix_rule(pattern=["rg"], decision="allow")
 prefix_rule(pattern=["sed", "-n"], decision="allow")
+prefix_rule(pattern=["wc", "-l"], decision="allow")
 
-prefix_rule(pattern=["git", "fetch", "origin"], decision="allow")
-prefix_rule(pattern=["git", "worktree", ["list", "add", "remove"]], decision="allow")
-prefix_rule(pattern=["git", "add"], decision="allow")
+# Git
+prefix_rule(pattern=["git", "checkout"], decision="allow")
 prefix_rule(pattern=["git", "commit"], decision="allow")
+prefix_rule(pattern=["git", "fetch", "origin"], decision="allow")
+prefix_rule(pattern=["git", "stash", ["pop", "push"]], decision="allow")
+prefix_rule(pattern=["git", "worktree", ["add", "list", "remove"]], decision="allow")
+prefix_rule(pattern=["git", ["add", "rm"]], decision="allow")
+prefix_rule(pattern=["git", ["diff", "grep", "ls-remote", "merge-tree", "show", "status"]], decision="allow")
+prefix_rule(pattern=["git", ["restore", "rebase"]], decision="allow")
 
-prefix_rule(pattern=["gh", "api", "--paginate", "-X", "GET"], decision="allow")
+# GitHub
 prefix_rule(pattern=["gh", "api", "-X", "GET"], decision="allow")
+prefix_rule(pattern=["gh", "api", ["-i", "--paginate"], "-X", "GET"], decision="allow")
 prefix_rule(pattern=["gh", "auth", "status"], decision="allow")
-prefix_rule(pattern=["gh", "issue", ["view", "list", "status"]], decision="allow")
+prefix_rule(pattern=["gh", "issue", ["list", "status", "view"]], decision="allow")
 prefix_rule(pattern=["gh", "pr", "checkout"], decision="allow")
-prefix_rule(pattern=["gh", "pr", ["view", "list", "checks", "diff"]], decision="allow")
-prefix_rule(pattern=["gh", "release", ["view", "list"]], decision="allow")
+prefix_rule(pattern=["gh", "pr", ["checks", "diff", "list", "view"]], decision="allow")
+prefix_rule(pattern=["gh", "release", ["list", "view"]], decision="allow")
 prefix_rule(pattern=["gh", "repo", "clone"], decision="allow")
-prefix_rule(pattern=["gh", "repo", ["view", "list"]], decision="allow")
-prefix_rule(pattern=["gh", "run", ["view", "list", "download"]], decision="allow")
-prefix_rule(pattern=["gh", "search", ["issues", "prs", "repos", "code"]], decision="allow")
-prefix_rule(pattern=["gh", "workflow", ["view", "list"]], decision="allow")
+prefix_rule(pattern=["gh", "repo", ["list", "view"]], decision="allow")
+prefix_rule(pattern=["gh", "run", ["download", "list", "view", "watch"]], decision="allow")
+prefix_rule(pattern=["gh", "search", ["code", "issues", "prs", "repos"]], decision="allow")
+prefix_rule(pattern=["gh", "workflow", ["list", "view"]], decision="allow")
 
-prefix_rule(pattern=["cargo", ["check", "search"]], decision="allow")
+# Cargo
+prefix_rule(pattern=["cargo", ["check", "info", "package", "search", "test"]], decision="allow")
+prefix_rule(pattern=["cargo", "publish", "--dry-run"], decision="allow")
+
+# Docker
+prefix_rule(pattern=["docker", "buildx", "imagetools", "inspect"], decision="allow")
 prefix_rule(pattern=["docker", "compose", "ps"], decision="allow")
 prefix_rule(pattern=["docker", "image", ["inspect", "ls"]], decision="allow")
-prefix_rule(pattern=["docker", ["logs", "ps"]], decision="allow")
+prefix_rule(pattern=["docker", ["build", "logs", "ps"]], decision="allow")
 
-prefix_rule(pattern=["uv", "run", ["ruff", "pyright", "ty"]], decision="allow")
+# pnpm
+prefix_rule(pattern=["pnpm", ["audit", "view"]], decision="allow")
+
+# uv
+prefix_rule(pattern=["uv", "run", ["pyright", "pytest", "ruff", "ty"]], decision="allow")
+prefix_rule(pattern=["uv", ["build", "lock", "sync"]], decision="allow")
 prefix_rule(pattern=["uvx", "ruff"], decision="allow")
 
+# Codex tooling
+prefix_rule(pattern=["~/.codex/skills/git-changelog/scripts/collect-git-info.py"], decision="allow")
+prefix_rule(pattern=["codex", "plugin", "add", "codex-tools@dotfiles"], decision="allow")
 prefix_rule(pattern=["node", [
   "~/.codex/skills/.system/openai-docs/scripts/fetch-codex-manual.mjs"
 ]], decision="allow")
 prefix_rule(pattern=["uv", "run", "--with", "pyyaml", [
   "~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py",
-  "~/.codex/skills/.system/skill-creator/scripts/quick_validate.py"]
-], decision="allow")
+  "~/.codex/skills/.system/skill-creator/scripts/quick_validate.py"
+]], decision="allow")

@@ -9,6 +9,7 @@ prepare: # default command
 
 sync: # create or restore managed links
 	git config --local filter.codex-config.clean '"$(CURDIR)/scripts/git-diff-codex-config.py"'
+	git config --local filter.codex-config.smudge cat
 	git config --local filter.codex-config.required true
 	$(DOTDROP) install --force-actions $(DOTDROP_PROFILE)
 
