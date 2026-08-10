@@ -1,0 +1,10 @@
+{
+  "files.associations": {
+    "*.rules": "plaintext"
+  },
+  "files.exclude": {
+    "CLAUDE.md": true,
+    "LICENSE": true
+  },
+  "prettier.requireConfig": false
+}

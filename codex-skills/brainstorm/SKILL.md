@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-description: Explore ideas, requirements, and meaningful product or technical trade-offs through conversation, with optional research notes in docs/research. Use when the user explicitly asks to brainstorm, discuss options, or think through a decision before planning or implementation.
+description: Explore open-ended product or technical decisions and their trade-offs. Use when the user asks to brainstorm before planning or implementation, not for a bounded review of existing content.
 ---
 
 # Brainstorm

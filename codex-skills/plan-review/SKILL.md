@@ -1,6 +1,6 @@
 ---
 name: plan-review
-description: Review and revise an implementation plan in docs/plans using independent Codex reviewers and optional Claude feedback. Use when the user invokes $plan-review or asks to validate or improve an implementation plan.
+description: Review and revise an implementation plan in docs/plans. Use when the user invokes $plan-review or explicitly asks to improve a plan through review, not for read-only validation.
 ---
 
 # Plan Review

@@ -7,8 +7,6 @@ description: Create an executable implementation plan in docs/plans for a featur
 
 Create a practical implementation plan file at `docs/plans/yyyymmdd-<task-name>.md`.
 
-This skill is a Codex port of the Claude planning command. Adapt the workflow to Codex tools: use local file reads/searches for discovery, `request_user_input` only when it is available, plain concise questions otherwise, and `apply_patch` for file creation.
-
 ## Workflow
 
 ### Step 0: Load Planning Rules
@@ -20,12 +18,6 @@ Before planning, check for optional custom rules:
 
 Use the first non-empty file found. Treat rules as additional guidance for creating the plan; do not paste rules into the plan unless the user explicitly asks.
 
-If the user asks to show, add, update, or clear planning rules:
-
-- Prefer project rules in `.codex/planning-rules.md`.
-- Only touch `.claude/planning-rules.md` if the user specifically asks for Claude-compatible rules.
-- For user-level rules, use `$CODEX_HOME/planning-rules.md` or `~/.codex/planning-rules.md`.
-
 ### Step 1: Gather Context
 
 Inspect project context before writing the plan. Keep discovery focused:
@@ -34,7 +26,7 @@ Inspect project context before writing the plan. Keep discovery focused:
 - For a feature: find 1-3 relevant files/directories and existing patterns.
 - For a bug: search error messages, function names, and recent changes.
 - For a refactor/migration: inspect references/imports and nearby tests.
-- For vague requests: check `git status --short`, recent commits, and top-level structure.
+- For vague requests: inspect the top-level structure and relevant recent commits.
 
 Summarize findings briefly: relevant files, current behavior, constraints, and likely risks. Treat research as discovery context, verify details that affect the plan, and preserve its path for the plan's Context section.
 
