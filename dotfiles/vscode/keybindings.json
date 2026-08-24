@@ -72,5 +72,10 @@
   {
     "key": "cmd+0",
     "command": "editor.action.fontZoomReset"
+  },
+  {
+    "key": "ctrl+w",
+    "command": "editor.action.toggleWordWrap",
+    "when": "editorTextFocus"
   }
 ]

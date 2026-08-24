@@ -9,7 +9,9 @@ macos-option-as-alt = left
 # font-feature = -salt
 
 theme = dark:Catppuccin Macchiato,light:Catppuccin Latte
-shell-integration-features = ssh-terminfo,ssh-env
+# shell-integration-features = ssh-terminfo,ssh-env
+# shell-integration-features = no-ssh-env,no-ssh-terminfo
+shell-integration = none
 
 # keybind = global:cmd+grave_accent=toggle_quick_terminal
 keybind = ctrl+grave_accent=toggle_quick_terminal
