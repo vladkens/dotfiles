@@ -4,7 +4,9 @@
 
 Codex prefix rules compare literal command arguments, so ``$HOME/.codex/tool``
 and ``~/.codex/tool`` do not match the same rule. This PreToolUse hook rewrites
-standalone absolute HOME path tokens to their ``~`` form.
+standalone absolute HOME path tokens to their ``~`` form. Paths beneath the
+real targets of symlinked ``~/.codex/skills`` entries use their logical Codex
+paths instead.
 
 The same literal-prefix behavior affects read-only GitHub API calls. REST calls
 that rely on gh's implicit GET do not match the explicit ``gh api -X GET``
@@ -27,32 +29,64 @@ import re
 import shlex
 import sys
 
-
 SHELL_OPERATORS = {"&&", "||", ";", "|", "&"}
 METHOD_FLAGS = {"-X", "--method"}
 BODY_FLAGS = {"-f", "--raw-field", "-F", "--field", "--input"}
 
 
+def codex_skill_aliases(home: str) -> tuple[tuple[str, str], ...]:
+    skills_dir = os.path.join(home, ".codex", "skills")
+    try:
+        entries = os.scandir(skills_dir)
+    except OSError:
+        return ()
+
+    aliases = []
+    with entries:
+        for entry in entries:
+            if not entry.is_symlink():
+                continue
+            aliases.append((os.path.realpath(entry.path), entry.path))
+
+    return tuple(sorted(aliases, key=lambda alias: len(alias[0]), reverse=True))
+
+
 def normalize_home_paths(command: str, home: str) -> str:
     home_prefix = f"{home}/"
+    skill_aliases = codex_skill_aliases(home)
     tokens = re.split(r"([\t \r\n]+)", command)
 
     for index, token in enumerate(tokens):
+        for real_path, logical_path in skill_aliases:
+            if token == real_path or token.startswith(f"{real_path}/"):
+                token = f"{logical_path}{token[len(real_path) :]}"
+                break
+
         if token == home:
-            tokens[index] = "~"
+            token = "~"
         elif token.startswith(home_prefix):
-            tokens[index] = f"~/{token[len(home_prefix) :]}"
+            token = f"~/{token[len(home_prefix) :]}"
+        tokens[index] = token
 
     return "".join(tokens)
 
 
-def shell_args(command: str) -> list[str] | None:
+def leading_command_args(command: str) -> list[str] | None:
+    """Parse only the command being normalized; Codex evaluates later segments."""
     try:
-        args = shlex.split(command)
+        lexer = shlex.shlex(command, posix=True, punctuation_chars="&;|")
+        lexer.commenters = ""
+        lexer.whitespace_split = True
     except ValueError:
         return None
 
-    if any(token in SHELL_OPERATORS for token in args):
+    args: list[str] = []
+    try:
+        for token in lexer:
+            if token in SHELL_OPERATORS:
+                break
+            args.append(token)
+    except ValueError:
         return None
 
     return args
@@ -70,7 +104,7 @@ def has_option(args: list[str], names: set[str]) -> bool:
 
 
 def normalize_gh_api_get(command: str) -> str:
-    args = shell_args(command)
+    args = leading_command_args(command)
     if args is None or len(args) < 3 or args[:2] != ["gh", "api"] or args[2] == "graphql":
         return command
     if has_option(args[2:], METHOD_FLAGS | BODY_FLAGS):

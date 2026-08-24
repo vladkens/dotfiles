@@ -63,7 +63,7 @@ Keep responses practical and conversational. Lead with known facts, state the re
 
 - One question at a time.
 - Inspect context before proposing architecture.
-- YAGNI ruthlessly: remove unnecessary features and keep scope minimal.
+- YAGNI ruthlessly: deliver the smallest complete solution to the user's request; do not invent MVPs, phases, or deferred follow-up work unless the user asks for staged delivery.
 - Prefer project conventions and existing extension points when they exist.
 - Explore alternatives only when alternatives are real.
 - If a question blocks progress, ask it before presenting a full proposal.

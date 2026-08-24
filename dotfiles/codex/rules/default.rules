@@ -50,6 +50,7 @@ prefix_rule(pattern=["uv", ["build", "lock", "sync"]], decision="allow")
 prefix_rule(pattern=["uvx", "ruff"], decision="allow")
 
 # Codex tooling
+prefix_rule(pattern=["~/.codex/skills/git-commit-msg/scripts/collect-context.py"], decision="allow")
 prefix_rule(pattern=["~/.codex/skills/git-changelog/scripts/collect-git-info.py"], decision="allow")
 prefix_rule(pattern=["codex", "plugin", "add", "codex-tools@dotfiles"], decision="allow")
 prefix_rule(pattern=["node", [
