@@ -1,7 +1,7 @@
 DOTDROP := dotdrop --no-banner --cfg=$(CURDIR)/dotdrop.yaml
 DOTDROP_PROFILE := --profile=default
 
-.PHONY: prepare sync launchd
+.PHONY: prepare sync launchd macos-defaults
 
 prepare: # default command
 	uvx ruff format .
@@ -16,3 +16,6 @@ sync: # create or restore managed links
 launchd: # install and reload managed launchd jobs
 	./scripts/launchd-hourly-snapshot.py
 	./scripts/launchd-key-remapping.py
+
+macos-defaults: # apply managed macOS preferences
+	defaults write com.apple.CrashReporter DialogType -string server
