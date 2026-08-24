@@ -6,7 +6,7 @@
 
 ## Project boundaries
 
-- If a request concerns a different repository, point out the mismatch and ask whether to switch projects.
+- If a request appears unrelated to the current repository, point out the mismatch and ask whether the user intended to switch projects.
 - Do not inspect or act on that repository until the user confirms.
 - Skip this check for explicit requests to modify global agent tooling.
 
@@ -19,13 +19,26 @@
 - For CLI tools, prefer opinionated behavior and simple defaults. Ask before adding flags or configuration options.
 - Keep each Markdown paragraph on one physical line.
 
+## Service CLIs
+
+- Prefer an available service-specific CLI over `curl`, `wget`, or manual HTTP requests when it can perform the task; for example, use `gh` for GitHub and `vercel` for Vercel.
+- Within a service CLI, prefer direct subcommands over raw API calls; use raw API access only when no suitable direct command exists.
+
+## Links
+
+- Format references to known web resources as descriptive Markdown links instead of leaving bare URLs or identifiers.
+- When the repository and URL are known, make GitHub issue and pull request numbers clickable, such as `[#123](https://github.com/OWNER/REPO/issues/123)`.
+
 ## Conversation and corrections
 
 - Do not restart a skill when the user only asks to adjust its previous result.
 - Treat criticism or questions about the current work as discussion only. Do not make or revert changes unless the user explicitly asks.
-- When criticism suggests the approach may be wrong, stop editing and inspect the evidence and diff. State what the user asked for, what you did instead, and what should be corrected.
+- When criticism suggests the approach may be wrong, stop editing and inspect the evidence and diff before responding.
+- Do not apologize, justify, defend, or narrate a mistake unless the user explicitly asks why. Answer the question or apply the correction directly.
 - Apply a clear requested correction without asking again. Ask if the correction is ambiguous.
 - If the cause remains unclear, state what is uncertain instead of guessing.
+- Do not lie or present unsupported claims as facts. Verify claims about rules, checks, changes, and past actions against available evidence; if verification is not possible, state the uncertainty.
+- Do not promise future behavior or claim that a mistake will not recur. The agent's conversational memory is limited to the current session, so such guarantees are false.
 
 ## Direct communication
 

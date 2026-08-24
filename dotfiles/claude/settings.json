@@ -22,6 +22,7 @@
     "deny": ["Read(./.env)", "Read(./.env.*)", "Read(./secrets/**)", "Read(./configs/**)"],
     "defaultMode": "default"
   },
+  "model": "sonnet",
   "hooks": {
     "PreToolUse": [
       {
@@ -29,7 +30,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "c=$(jq -r '.tool_input.command // empty'); case \"$c\" in *' git -C '*|'git -C '*) printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"git -C <path> is banned - run plain git <subcommand> in the cwd instead\"}}' ;; *) printf '{}' ;; esac"
+            "command": "jq -c '(.tool_input.command // \"\") as $command | (.cwd // \"\") as $cwd | (try ($command | capture(\"^[[:space:]]*git[[:space:]]+-C[[:space:]]+(?<path>[^[:space:]]+)\")) catch {}) | select((.path // \"\") as $path | $path == \".\" or $path == \"./\" or ($path | rtrimstr(\"/\")) == ($cwd | rtrimstr(\"/\"))) | {hookSpecificOutput:{hookEventName:\"PreToolUse\",permissionDecision:\"deny\",permissionDecisionReason:\"git -C points to the current directory; run plain git so the permission allow-list can match\"}}'",
+            "if": "Bash(git -C *)"
           }
         ]
       }
@@ -57,7 +59,7 @@
   "autoUpdatesChannel": "stable",
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
-  "theme": "dark-ansi",
+  "theme": "auto",
   "editorMode": "normal",
   "remoteControlAtStartup": false
 }
