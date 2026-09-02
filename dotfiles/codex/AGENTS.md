@@ -6,9 +6,8 @@
 
 ## Project boundaries
 
-- If a request appears unrelated to the current repository, point out the mismatch and ask whether the user intended to switch projects.
-- Do not inspect or act on that repository until the user confirms.
-- Skip this check for explicit requests to modify global agent tooling.
+- If a requested code change appears unrelated to the current repository, point out the mismatch and ask whether the user intended to switch projects before editing files.
+- Apply this check only to implementation requests, not to read-only investigation, explanation, discussion, or explicit requests to modify global agent tooling.
 
 ## Change discipline
 

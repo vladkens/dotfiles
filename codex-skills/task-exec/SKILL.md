@@ -1,6 +1,6 @@
 ---
 name: task-exec
-description: Execute a described coding task through an approved solution and user-reviewed implementation. Use when the user asks to implement requirements that are already written, not when the user asks only for a plan or autonomous plan execution.
+description: Execute a described coding task through an approved solution and user-reviewed implementation. Use only when the user explicitly invokes $task-exec, not for ordinary implementation requests.
 ---
 
 # Task Exec
