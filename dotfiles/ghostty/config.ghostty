@@ -13,3 +13,4 @@ shell-integration-features = ssh-terminfo,ssh-env
 
 # keybind = global:cmd+grave_accent=toggle_quick_terminal
 keybind = ctrl+grave_accent=toggle_quick_terminal
+keybind = cmd+shift+k=clear_screen

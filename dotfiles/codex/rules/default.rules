@@ -1,4 +1,4 @@
-# Shell utilities
+# Local utilities
 prefix_rule(pattern=["base64"], decision="allow")
 prefix_rule(pattern=["jq"], decision="allow")
 prefix_rule(pattern=["nl"], decision="allow")
@@ -7,10 +7,15 @@ prefix_rule(pattern=["rg"], decision="allow")
 prefix_rule(pattern=["sed", "-n"], decision="allow")
 prefix_rule(pattern=["wc", "-l"], decision="allow")
 
+# Network utilities
+prefix_rule(pattern=["dig"], decision="allow")
+prefix_rule(pattern=["whois"], decision="allow")
+
 # Git
 prefix_rule(pattern=["git", "checkout"], decision="allow")
 prefix_rule(pattern=["git", "commit"], decision="allow")
 prefix_rule(pattern=["git", "fetch", "origin"], decision="allow")
+prefix_rule(pattern=["git", "fetch", "--prune", "origin"], decision="allow")
 prefix_rule(pattern=["git", "stash", ["pop", "push"]], decision="allow")
 prefix_rule(pattern=["git", "worktree", ["add", "list", "remove"]], decision="allow")
 prefix_rule(pattern=["git", ["add", "rm"]], decision="allow")
@@ -32,14 +37,29 @@ prefix_rule(pattern=["gh", "search", ["code", "issues", "prs", "repos"]], decisi
 prefix_rule(pattern=["gh", "workflow", ["list", "view"]], decision="allow")
 
 # Cargo
-prefix_rule(pattern=["cargo", ["check", "info", "package", "search", "test"]], decision="allow")
-prefix_rule(pattern=["cargo", "publish", "--dry-run"], decision="allow")
+prefix_rule(pattern=["cargo", ["check", "clippy", "fmt"]], decision="allow")
+prefix_rule(pattern=["cargo", "+nightly", ["check", "clippy", "fmt"]], decision="allow")
+prefix_rule(pattern=["cargo", "test"], decision="allow")
+prefix_rule(pattern=["cargo", "deny", "check"], decision="allow")
+prefix_rule(pattern=["cargo", "install", "--list"], decision="allow")
 
 # Docker
 prefix_rule(pattern=["docker", "buildx", "imagetools", "inspect"], decision="allow")
 prefix_rule(pattern=["docker", "compose", "ps"], decision="allow")
 prefix_rule(pattern=["docker", "image", ["inspect", "ls"]], decision="allow")
 prefix_rule(pattern=["docker", ["build", "logs", "ps"]], decision="allow")
+
+# AWS
+prefix_rule(pattern=["aws", "sts", "get-caller-identity"], decision="allow")
+
+# Fly.io
+prefix_rule(pattern=["flyctl", "auth", "whoami"], decision="allow")
+prefix_rule(pattern=["flyctl", "config", "validate"], decision="allow")
+prefix_rule(pattern=["flyctl", "machine", "status"], decision="allow")
+prefix_rule(pattern=["flyctl", "redis", ["list", "plans"]], decision="allow")
+prefix_rule(pattern=["flyctl", "volumes", "list"], decision="allow")
+prefix_rule(pattern=["flyctl", ["logs", "status"]], decision="allow")
+prefix_rule(pattern=["flyctl", "orgs", ["list", "show"]], decision="allow")
 
 # pnpm
 prefix_rule(pattern=["pnpm", ["audit", "view"]], decision="allow")
