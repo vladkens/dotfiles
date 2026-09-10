@@ -1,0 +1,36 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = []
+# ///
+
+import argparse
+import os
+import subprocess
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Create a Git commit with a specific author and committer date."
+    )
+    parser.add_argument("date", help="date accepted by Git")
+    parser.add_argument("message", help="commit message")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    environment = os.environ | {
+        "GIT_AUTHOR_DATE": args.date,
+        "GIT_COMMITTER_DATE": args.date,
+    }
+    result = subprocess.run(
+        ["git", "commit", "-m", args.message],
+        env=environment,
+        check=False,
+    )
+    raise SystemExit(result.returncode)
+
+
+if __name__ == "__main__":
+    main()

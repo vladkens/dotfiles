@@ -87,18 +87,13 @@ def find_empty_dirs(root: Path, git_root: Path | None) -> list[Path]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Prune empty directories recursively.")
+    parser = argparse.ArgumentParser(description="Remove empty directories recursively.")
     parser.add_argument(
         "root",
         nargs="?",
         type=Path,
         default=Path.cwd(),
         help="directory to clean (default: current directory)",
-    )
-    parser.add_argument(
-        "--apply",
-        action="store_true",
-        help="remove the directories instead of only printing them",
     )
     return parser.parse_args()
 
@@ -115,18 +110,16 @@ def main() -> None:
 
     git_root = find_git_root(root)
     empty_dirs = find_empty_dirs(root, git_root)
-    action = "Removed" if args.apply else "Would remove"
 
     for directory in empty_dirs:
-        if args.apply:
-            for entry in directory.iterdir():
-                if is_ds_store_file(entry):
-                    entry.unlink()
-            directory.rmdir()
+        for entry in directory.iterdir():
+            if is_ds_store_file(entry):
+                entry.unlink()
+        directory.rmdir()
         print(directory.relative_to(root))
 
     noun = "directory" if len(empty_dirs) == 1 else "directories"
-    print(f"{action} {len(empty_dirs)} empty {noun}.")
+    print(f"Removed {len(empty_dirs)} empty {noun}.")
 
 
 if __name__ == "__main__":

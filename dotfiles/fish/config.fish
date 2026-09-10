@@ -57,9 +57,9 @@ alias dfree='docker rmi -f $(docker images -q) && docker system prune -a -f'
 alias dcu='docker compose up -d'
 alias dcd='docker compose down'
 alias dcdv='docker compose down --volumes'
-alias repo-open='gh repo view --web'
-alias pr-open='gh pr view --web'
-alias pr-checkout='gh pr checkout'
+alias gh-repo-open='gh repo view --web'
+alias gh-pr-open='gh pr view --web'
+alias gh-pr-checkout='gh pr checkout'
 
 # --- Functions ---
 

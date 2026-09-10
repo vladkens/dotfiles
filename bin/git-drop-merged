@@ -1,0 +1,87 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = []
+# ///
+
+import json
+import subprocess
+from pathlib import Path
+
+PROTECTED_BRANCHES = {"main", "master", "develop"}
+
+
+def run(command: list[str], cwd: Path | None = None) -> str:
+    try:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        raise SystemExit(f"{command[0]} is required") from None
+
+    if result.returncode != 0:
+        message = result.stderr.strip() or result.stdout.strip() or f"{command[0]} failed"
+        raise SystemExit(message)
+
+    return result.stdout.strip()
+
+
+def find_git_root() -> Path:
+    output = run(["git", "rev-parse", "--show-toplevel"])
+    return Path(output).resolve()
+
+
+def list_branches(git_root: Path) -> list[str]:
+    current_branch = run(["git", "branch", "--show-current"], cwd=git_root)
+    protected = PROTECTED_BRANCHES | {current_branch}
+    output = run(
+        ["git", "branch", "--format=%(refname:short)"],
+        cwd=git_root,
+    )
+    return [branch for branch in output.splitlines() if branch not in protected]
+
+
+def find_merged_pr(git_root: Path, branch: str) -> dict[str, object] | None:
+    output = run(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--state",
+            "merged",
+            "--head",
+            branch,
+            "--limit",
+            "1",
+            "--json",
+            "number,url",
+        ],
+        cwd=git_root,
+    )
+    pull_requests = json.loads(output)
+    return pull_requests[0] if pull_requests else None
+
+
+def main() -> None:
+    git_root = find_git_root()
+    branches = list_branches(git_root)
+    merged = [
+        (branch, pull_request)
+        for branch in branches
+        if (pull_request := find_merged_pr(git_root, branch)) is not None
+    ]
+
+    for branch, pull_request in merged:
+        print(f"Deleting {branch} (#{pull_request['number']}) {pull_request['url']}")
+        run(["git", "branch", "-D", "--", branch], cwd=git_root)
+
+    noun = "branch" if len(merged) == 1 else "branches"
+    print(f"Deleted {len(merged)} merged PR {noun}.")
+
+
+if __name__ == "__main__":
+    main()
