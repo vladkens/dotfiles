@@ -1,33 +1,23 @@
 # dotfiles
 
-Configuration sources are grouped by application under `dotfiles/`. [Dotdrop](https://github.com/deadc0de6/dotdrop) maps them to their real paths using `dotdrop.yaml`. Codex/Claude skills and plugins remain separate because they are extensions rather than ordinary configuration.
+Configuration sources are grouped by application under `dotfiles/`. Claude and Codex configuration and extensions live together under their dedicated top-level directories.
+
+## Setup
+
+After cloning the repository, install Dotter and deploy the configuration:
+
+```sh
+brew install dotter
+make deploy
+```
 
 ## Repository Layout
 
-- Keep application configs under `dotfiles/<application>/` and preserve their directory structure.
+- Keep application configs under `dotfiles/<app>/` and preserve their directory structure.
 - If an application mixes configuration with local state in the same directory, manage only the files and subdirectories that belong to the configuration.
+- Keep personal CLI commands under `bin/`; Dotter installs them into `~/.local/bin`.
 - Put files installed directly in `$HOME` at the root of `dotfiles/`.
-- Keep Codex/Claude skills and plugins separate; keep repository tooling in `scripts/` or the repository root.
-
-## Usage
-
-Install Dotdrop using the package manager available on the current operating system, then create or restore the configured links:
-
-```sh
-make sync
-```
-
-After linking, changes made through application UIs modify the repository files directly and appear in `git diff`.
-
-## Why Dotdrop
-
-[GNU Stow](https://www.gnu.org/software/stow/) mirrors target paths inside every package and creates symlinks. It is simple, but forces the repository to reproduce the `$HOME` hierarchy and has no per-file destination map.
-
-[Dotter](https://github.com/SuperCuber/dotter) provides explicit mappings, symlinks, and rendered copies. It is a good simple linker, but lacks Dotdrop's target-to-repository update workflow and is maintained conservatively as feature-complete.
-
-[chezmoi](https://www.chezmoi.io/) is mature and powerful, but its encoded source tree and templating model are more complex than needed here. [yadm](https://yadm.io/) makes UI edits natural by using `$HOME` as a Git work tree, but the repository still mirrors home paths instead of grouping files by application.
-
-[Dotdrop](https://dotdrop.readthedocs.io/) was selected because it keeps an explicit `src`/`dst` map, supports both copies and links, lets the source layout stay independent from destination paths, and can synchronize detached changes back into the repository.
+- Keep Claude and Codex configuration and extensions under `claude/` and `codex/`, and keep repository tooling in `scripts/` or the repository root.
 
 ## Codex Config Notes
 

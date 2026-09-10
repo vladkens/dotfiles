@@ -46,14 +46,7 @@
     "brainstorm@umputun-cc-thingz": true,
     "planning@umputun-cc-thingz": true
   },
-  "extraKnownMarketplaces": {
-    "umputun-cc-thingz": {
-      "source": {
-        "source": "github",
-        "repo": "umputun/cc-thingz"
-      }
-    }
-  },
+  "extraKnownMarketplaces": {},
   "spinnerTipsEnabled": false,
   "effortLevel": "xhigh",
   "autoUpdatesChannel": "stable",

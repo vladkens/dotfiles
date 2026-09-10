@@ -1,2 +1,4 @@
 .cache/
+.dotter/cache.toml
+.dotter/cache/
 .DS_Store
