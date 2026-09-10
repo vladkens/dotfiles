@@ -2,7 +2,7 @@
 
 This repository is the source of truth for personal dotfiles and agent extensions installed across one or more computers. The instructions in this file apply to both Codex and Claude unless a section explicitly says otherwise.
 
-Keep ordinary application and system configuration under `dotfiles/`, grouped by application. Keep larger, self-contained agent extensions in the dedicated top-level directories: `codex-skills/`, `codex-plugins/`, and `claude-skills/`. Treat changes to these files as changes to global tooling and behavior, not as configuration specific to this repository.
+Keep ordinary application and system configuration under `dotfiles/`, grouped by application. Keep Claude and Codex configuration and extensions together under the top-level `claude/` and `codex/` directories. Treat changes to these files as changes to global tooling and behavior, not as configuration specific to this repository.
 
 ## Instruction writing
 

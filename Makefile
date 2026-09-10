@@ -1,17 +1,14 @@
-DOTDROP := dotdrop --no-banner --cfg=$(CURDIR)/dotdrop.yaml
-DOTDROP_PROFILE := --profile=default
+.PHONY: prepare deploy launchd macos-defaults
 
-.PHONY: prepare sync launchd macos-defaults
-
-prepare: # default command
+prepare:
 	uvx ruff format .
 	pnpm dlx prettier --write --log-level warn .
 
-sync: # create or restore managed links
-	git config --local filter.codex-config.clean '"$(CURDIR)/scripts/git-diff-codex-config.py"'
-	git config --local filter.codex-config.smudge cat
-	git config --local filter.codex-config.required true
-	$(DOTDROP) install --force-actions $(DOTDROP_PROFILE)
+deploy:
+	@git config --local filter.codex-config.clean '"$(CURDIR)/scripts/git-diff-codex-config.py"'
+	@git config --local filter.codex-config.smudge cat
+	@git config --local filter.codex-config.required true
+	dotter deploy --force --noconfirm --verbose
 
 launchd: # install and reload managed launchd jobs
 	./scripts/launchd-hourly-snapshot.py
