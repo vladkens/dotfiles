@@ -5,10 +5,13 @@ check_for_update_on_startup = false
 default_permissions = "dev_workspace"
 personality = "pragmatic"
 
+[shell_environment_policy.set]
+PNPM_CONFIG_PREFER_OFFLINE = "true"
+
 [tui]
 session_picker_view = "dense"
 show_tooltips = false
-status_line = ["model-with-reasoning", "current-dir", "context-remaining", "five-hour-limit", "weekly-limit", "thread-id"]
+status_line = ["model-with-reasoning", "current-dir", "context-remaining", "five-hour-limit", "weekly-limit", "context-window-size", "estimated-thread-cost"]
 status_line_use_colors = true
 theme = "catppuccin-macchiato"
 
