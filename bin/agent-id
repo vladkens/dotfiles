@@ -1,0 +1,44 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = []
+# ///
+
+import os
+
+
+def codex_id() -> str | None:
+    session_id = os.environ.get("CODEX_SESSION_ID")
+    thread_id = os.environ.get("CODEX_THREAD_ID")
+    version = os.environ.get("CODEX_VERSION")
+
+    if session_id is None and thread_id is None:
+        return None
+
+    agent = f"codex@{version}" if version is not None else "codex"
+    result = f"{agent} {session_id or thread_id}"
+    if session_id is not None and thread_id is not None and thread_id != session_id:
+        result += f" thread={thread_id}"
+    return result
+
+
+def claude_id() -> str | None:
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get(
+        "CLAUDE_CODE_REMOTE_SESSION_ID"
+    )
+    if session_id is None:
+        return None
+
+    return f"claude-code {session_id}"
+
+
+def main() -> None:
+    agent_id = codex_id() or claude_id()
+    if agent_id is None:
+        raise SystemExit("unknown agent session")
+
+    print(agent_id)
+
+
+if __name__ == "__main__":
+    main()

@@ -9,21 +9,19 @@ import os
 import subprocess
 from pathlib import Path
 
+from _lib import run
+
 PROTECTED_DIRS = {".git", ".hg", ".jj", ".svn"}
 DS_STORE_NAME = ".ds_store"
 
 
 def find_git_root(root: Path) -> Path | None:
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError:
-        raise SystemExit("git is required to apply .gitignore rules") from None
+    result = run(
+        ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
 
     if result.returncode != 0:
         return None
@@ -36,11 +34,10 @@ def find_ignored_dirs(git_root: Path | None, directories: list[Path]) -> set[Pat
         return set()
 
     relative_paths = [directory.relative_to(git_root).as_posix() for directory in directories]
-    result = subprocess.run(
+    result = run(
         ["git", "-C", str(git_root), "check-ignore", "--no-index", "-z", "--stdin"],
         input="\0".join(relative_paths) + "\0",
-        capture_output=True,
-        text=True,
+        capture=True,
         check=False,
     )
 

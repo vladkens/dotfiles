@@ -6,7 +6,8 @@
 
 import argparse
 import os
-import subprocess
+
+from _lib import run
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,7 +25,7 @@ def main() -> None:
         "GIT_AUTHOR_DATE": args.date,
         "GIT_COMMITTER_DATE": args.date,
     }
-    result = subprocess.run(
+    result = run(
         ["git", "commit", "-m", args.message],
         env=environment,
         check=False,
