@@ -2,6 +2,8 @@
 # https://learn.chatgpt.com/docs/permissions
 
 check_for_update_on_startup = false
+approval_policy = "on-request"
+approvals_reviewer = "auto_review"
 default_permissions = "dev_workspace"
 personality = "pragmatic"
 
@@ -11,7 +13,15 @@ PNPM_CONFIG_PREFER_OFFLINE = "true"
 [tui]
 session_picker_view = "dense"
 show_tooltips = false
-status_line = ["model-with-reasoning", "current-dir", "context-remaining", "five-hour-limit", "weekly-limit", "context-window-size", "estimated-thread-cost"]
+status_line = [
+  "model-with-reasoning",
+  "current-dir",
+  "context-remaining",
+  "five-hour-limit",
+  "weekly-limit",
+  "context-window-size",
+  "estimated-thread-cost",
+]
 status_line_use_colors = true
 theme = "catppuccin-macchiato"
 
@@ -73,6 +83,9 @@ enabled = true
 js_repl = false
 memories = false
 # network_proxy = true
+
+[features.context_management]
+experimental_mode = true
 
 [notice]
 hide_rate_limit_model_nudge = true
