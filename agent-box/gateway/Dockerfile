@@ -1,5 +1,7 @@
-FROM node:22-bookworm-slim
+FROM node:24-bookworm-slim
+
 RUN mkdir /auth && chown node:node /auth
-COPY gateway.mjs /app/gateway.mjs
+COPY gateway/gateway.mjs /app/gateway.mjs
+
 USER node
 CMD ["node", "/app/gateway.mjs"]
