@@ -1,0 +1,511 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = []
+# ///
+
+import argparse
+import getpass
+import hashlib
+import json
+import subprocess
+import sys
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+
+from _lib import run
+
+DOCKER_CONTEXT = "colima"
+LABEL = "dev.user.agent-box"
+NETWORK = "agent-box"
+GATEWAY_CONTAINER = "agent-box-gateway"
+GATEWAY_IMAGE = "agent-box-gateway:local"
+AGENT_IMAGE = "agent-box-agent:local"
+AUTH_VOLUME = "agent-box-auth"
+PROXY_URL = f"http://{GATEWAY_CONTAINER}:3128"
+SOURCE_DIR = Path(__file__).resolve().parent.parent / "agent-box"
+
+
+@dataclass(frozen=True)
+class NetworkConfig:
+    hosts: list[str]
+    digest: str
+
+
+class Docker:
+    def run(
+        self,
+        args: list[str],
+        *,
+        capture: bool = False,
+        check: bool = True,
+        input: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        return run(
+            ["docker", "--context", DOCKER_CONTEXT, *args],
+            capture=capture,
+            input=input,
+            check=check,
+            error="docker failed",
+        )
+
+    def output(self, args: list[str], *, check: bool = True) -> str:
+        return self.run(args, capture=True, check=check).stdout.strip()
+
+    def inspect(self, kind: str, name: str) -> dict | None:
+        result = self.run([kind, "inspect", name], capture=True, check=False)
+        if result.returncode != 0:
+            return None
+
+        return json.loads(result.stdout)[0]
+
+
+def load_network_config() -> NetworkConfig:
+    path = SOURCE_DIR / "config.toml"
+    config = tomllib.loads(path.read_text())
+    services = config.get("services", {})
+    enabled = config.get("network", {}).get("services", [])
+    unknown = [name for name in enabled if name not in services]
+    if unknown:
+        raise SystemExit(f"unknown network services: {', '.join(unknown)}")
+
+    hosts = [host for name in enabled for host in services[name].get("hosts", [])]
+    if not hosts or any(not isinstance(host, str) for host in hosts):
+        raise SystemExit(f"invalid network allowlist in {path}")
+
+    hosts = sorted(set(hosts))
+    digest = hashlib.sha256(json.dumps(hosts).encode()).hexdigest()[:16]
+    return NetworkConfig(hosts, digest)
+
+
+def source_digest(paths: list[Path]) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(paths):
+        digest.update(path.relative_to(SOURCE_DIR).as_posix().encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+
+    return digest.hexdigest()[:16]
+
+
+def image_source(docker: Docker, image: str) -> str | None:
+    inspected = docker.inspect("image", image)
+    if inspected is None:
+        return None
+
+    return inspected.get("Config", {}).get("Labels", {}).get(f"{LABEL}.source")
+
+
+def ensure_image(
+    docker: Docker,
+    image: str,
+    dockerfile: Path,
+    sources: list[Path],
+) -> str:
+    digest = source_digest(sources)
+    if image_source(docker, image) == digest:
+        return digest
+
+    print(f"Building {image}...", flush=True)
+    docker.run(
+        [
+            "build",
+            "--label",
+            f"{LABEL}.source={digest}",
+            "-t",
+            image,
+            "-f",
+            str(dockerfile),
+            str(SOURCE_DIR),
+        ]
+    )
+    return digest
+
+
+def remove_owned_containers(docker: Docker) -> None:
+    containers = docker.output(
+        ["ps", "-aq", "--filter", f"label={LABEL}.managed=true"],
+        check=False,
+    ).splitlines()
+    if containers:
+        docker.run(["rm", "-f", *containers], capture=True)
+
+
+def ensure_network(docker: Docker) -> None:
+    network = docker.inspect("network", NETWORK)
+    if network is None:
+        docker.run(["network", "create", "--internal", NETWORK], capture=True)
+        return
+
+    if network.get("Internal"):
+        return
+
+    print(f"Recreating {NETWORK} as an internal network...")
+    remove_owned_containers(docker)
+    docker.run(["network", "rm", NETWORK], capture=True)
+    docker.run(["network", "create", "--internal", NETWORK], capture=True)
+
+
+def container_matches(container: dict, labels: dict[str, str]) -> bool:
+    actual = container.get("Config", {}).get("Labels", {})
+    return all(actual.get(name) == value for name, value in labels.items())
+
+
+def ensure_gateway(docker: Docker, network: NetworkConfig) -> None:
+    source = ensure_image(
+        docker,
+        GATEWAY_IMAGE,
+        SOURCE_DIR / "gateway/Dockerfile",
+        [SOURCE_DIR / "gateway/Dockerfile", SOURCE_DIR / "gateway/gateway.mjs"],
+    )
+    labels = {
+        f"{LABEL}.managed": "true",
+        f"{LABEL}.role": "gateway",
+        f"{LABEL}.source": source,
+        f"{LABEL}.network": network.digest,
+        f"{LABEL}.spec": "1",
+    }
+    container = docker.inspect("container", GATEWAY_CONTAINER)
+    if container is not None and not container_matches(container, labels):
+        print("Recreating gateway...")
+        docker.run(["rm", "-f", GATEWAY_CONTAINER], capture=True)
+        container = None
+
+    if container is None:
+        args = [
+            "create",
+            "--name",
+            GATEWAY_CONTAINER,
+            "--restart",
+            "unless-stopped",
+            "--read-only",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--network",
+            NETWORK,
+            "--mount",
+            f"type=volume,source={AUTH_VOLUME},target=/auth,readonly",
+            "--env",
+            f"SANDBOX_ALLOWED_HOSTS={json.dumps(network.hosts)}",
+        ]
+        for name, value in labels.items():
+            args.extend(["--label", f"{name}={value}"])
+
+        docker.run([*args, GATEWAY_IMAGE], capture=True)
+        docker.run(["network", "connect", "bridge", GATEWAY_CONTAINER])
+        container = docker.inspect("container", GATEWAY_CONTAINER)
+
+    networks = container.get("NetworkSettings", {}).get("Networks", {})
+    if "bridge" not in networks:
+        docker.run(["network", "connect", "bridge", GATEWAY_CONTAINER])
+
+    if not container.get("State", {}).get("Running"):
+        docker.run(["start", GATEWAY_CONTAINER], capture=True)
+
+
+def project_name(workspace: Path) -> str:
+    digest = hashlib.sha256(str(workspace).encode()).hexdigest()[:16]
+    return f"agent-box-{digest}"
+
+
+def validate_workspace(path: Path) -> Path:
+    workspace = path.resolve()
+    if workspace in {Path("/"), Path.home()}:
+        raise SystemExit("run agent-box from a project directory")
+    if not workspace.is_dir():
+        raise SystemExit(f"not a directory: {workspace}")
+
+    return workspace
+
+
+def ensure_agent(docker: Docker, workspace: Path) -> str:
+    source = ensure_image(
+        docker,
+        AGENT_IMAGE,
+        SOURCE_DIR / "Dockerfile",
+        [SOURCE_DIR / "Dockerfile"],
+    )
+    name = project_name(workspace)
+    labels = {
+        f"{LABEL}.managed": "true",
+        f"{LABEL}.role": "agent",
+        f"{LABEL}.source": source,
+        f"{LABEL}.spec": "2",
+        f"{LABEL}.workspace": str(workspace),
+    }
+    container = docker.inspect("container", name)
+    if container is not None and not container_matches(container, labels):
+        print(f"Recreating {name}...")
+        docker.run(["rm", "-f", name], capture=True)
+        container = None
+
+    if container is None:
+        args = [
+            "create",
+            "--name",
+            name,
+            "--init",
+            "--network",
+            NETWORK,
+            "--mount",
+            f"type=bind,source={workspace},target=/workspace",
+            "--mount",
+            f"type=volume,source={name}-home,target=/home/node",
+            "--env",
+            f"HTTP_PROXY={PROXY_URL}",
+            "--env",
+            f"HTTPS_PROXY={PROXY_URL}",
+            "--env",
+            f"ALL_PROXY={PROXY_URL}",
+            "--env",
+            f"NO_PROXY={GATEWAY_CONTAINER},localhost,127.0.0.1",
+            "--env",
+            f"http_proxy={PROXY_URL}",
+            "--env",
+            f"https_proxy={PROXY_URL}",
+            "--env",
+            f"all_proxy={PROXY_URL}",
+            "--env",
+            f"no_proxy={GATEWAY_CONTAINER},localhost,127.0.0.1",
+            "--env",
+            f"ANTHROPIC_BASE_URL=http://{GATEWAY_CONTAINER}:8081",
+            "--env",
+            "CLAUDE_CODE_OAUTH_TOKEN=proxy",
+        ]
+        for label, value in labels.items():
+            args.extend(["--label", f"{label}={value}"])
+
+        docker.run([*args, AGENT_IMAGE], capture=True)
+        container = docker.inspect("container", name)
+
+    if not container.get("State", {}).get("Running"):
+        docker.run(["start", name], capture=True)
+
+    return name
+
+
+def prepare(docker: Docker, workspace: Path) -> str:
+    docker.run(["info"], capture=True)
+    network = load_network_config()
+    ensure_network(docker)
+    ensure_gateway(docker, network)
+    return ensure_agent(docker, workspace)
+
+
+def store_auth(docker: Docker, path: str, payload: str) -> None:
+    command = f"umask 077; cat > {path}.new && mv {path}.new {path}"
+    docker.run(
+        [
+            "run",
+            "--rm",
+            "-i",
+            "--mount",
+            f"type=volume,source={AUTH_VOLUME},target=/auth",
+            "--entrypoint",
+            "sh",
+            GATEWAY_IMAGE,
+            "-c",
+            command,
+        ],
+        input=payload,
+    )
+
+
+def configure_claude_auth(docker: Docker) -> None:
+    token = getpass.getpass("Claude token (from claude setup-token): ").strip()
+    if not token or any(character.isspace() for character in token):
+        raise SystemExit("expected a nonempty token without whitespace")
+
+    store_auth(docker, "/auth/claude-token", token)
+    print("Claude token saved in the gateway volume.")
+
+
+def sync_codex_auth(docker: Docker) -> None:
+    path = Path.home() / ".codex/auth.json"
+    try:
+        credentials = json.loads(path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        raise SystemExit("sign in on the host first: codex login") from None
+
+    tokens = credentials.get("tokens") or {}
+    if not tokens.get("access_token") or not tokens.get("account_id"):
+        raise SystemExit("sign in with ChatGPT on the host first: codex login")
+
+    payload = json.dumps({key: tokens[key] for key in ("access_token", "account_id")})
+    store_auth(docker, "/auth/codex.json", payload)
+
+
+def check_claude_auth(docker: Docker) -> None:
+    result = docker.run(
+        ["exec", GATEWAY_CONTAINER, "test", "-s", "/auth/claude-token"],
+        capture=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit("configure Claude authentication first: agent-box auth claude")
+
+
+def exec_in_agent(docker: Docker, container: str, command: list[str]) -> None:
+    args = ["exec", "-i"]
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        args.append("-t")
+
+    result = docker.run([*args, container, *command], check=False)
+    raise SystemExit(result.returncode)
+
+
+def configure_claude(docker: Docker, container: str) -> None:
+    script = """
+const fs = require('fs');
+const configPath = '/home/node/.claude.json';
+const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
+config.hasCompletedOnboarding = true;
+config.projects ??= {};
+config.projects['/workspace'] ??= {};
+config.projects['/workspace'].hasTrustDialogAccepted = true;
+fs.writeFileSync(configPath, JSON.stringify(config), {mode: 0o600});
+fs.mkdirSync('/home/node/.claude', {recursive: true});
+const settingsPath = '/home/node/.claude/settings.json';
+const settings = fs.existsSync(settingsPath) ? JSON.parse(fs.readFileSync(settingsPath, 'utf8')) : {};
+settings.skipDangerousModePermissionPrompt = true;
+fs.writeFileSync(settingsPath, JSON.stringify(settings), {mode: 0o600});
+""".strip()
+    docker.run(["exec", container, "node", "-e", script], capture=True)
+
+
+def run_claude(docker: Docker, workspace: Path, args: list[str]) -> None:
+    container = prepare(docker, workspace)
+    check_claude_auth(docker)
+    configure_claude(docker, container)
+    exec_in_agent(
+        docker,
+        container,
+        [
+            "claude",
+            "--dangerously-skip-permissions",
+            "--disallowedTools",
+            "AskUserQuestion",
+            "--append-system-prompt",
+            "Work autonomously. Make reasonable decisions without asking questions. Complete the task and verify the result. If blocked, report the blocker.",
+            *args,
+        ],
+    )
+
+
+def run_codex(docker: Docker, workspace: Path, args: list[str]) -> None:
+    container = prepare(docker, workspace)
+    sync_codex_auth(docker)
+    exec_in_agent(
+        docker,
+        container,
+        [
+            "codex",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            'model_provider="gateway"',
+            "-c",
+            f'model_providers.gateway={{name="Codex gateway",base_url="http://{GATEWAY_CONTAINER}:8082",wire_api="responses",supports_websockets=false}}',
+            "-c",
+            'projects."/workspace".trust_level="trusted"',
+            "-c",
+            'developer_instructions="Work autonomously. Make reasonable decisions without asking questions. Complete the task and verify the result. Report blockers."',
+            *args,
+        ],
+    )
+
+
+def recreate_agent(docker: Docker, workspace: Path) -> None:
+    docker.run(["info"], capture=True)
+    name = project_name(workspace)
+    if docker.inspect("container", name) is not None:
+        docker.run(["rm", "-f", name], capture=True)
+
+    prepare(docker, workspace)
+    print(f"Recreated {name}; its home volume was preserved.")
+
+
+def stop_agent(docker: Docker, workspace: Path) -> None:
+    docker.run(["info"], capture=True)
+    name = project_name(workspace)
+    container = docker.inspect("container", name)
+    if container is None:
+        print(f"{name} does not exist.")
+        return
+
+    if container.get("State", {}).get("Running"):
+        docker.run(["stop", name], capture=True)
+
+    print(f"Stopped {name}.")
+
+
+def remove_agent(docker: Docker, workspace: Path) -> None:
+    docker.run(["info"], capture=True)
+    name = project_name(workspace)
+    if docker.inspect("container", name) is None:
+        print(f"{name} does not exist.")
+        return
+
+    docker.run(["rm", "-f", name], capture=True)
+    print(f"Removed {name}; its home volume was preserved.")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run Claude and Codex in a credential-isolated Docker sandbox."
+    )
+    commands = parser.add_subparsers(dest="command", required=True)
+    for name in ("claude", "codex"):
+        commands.add_parser(name)
+
+    commands.add_parser("shell")
+    auth = commands.add_parser("auth")
+    auth.add_argument("provider", choices=("claude", "codex"))
+    commands.add_parser("recreate")
+    commands.add_parser("stop")
+    commands.add_parser("remove")
+    args, remaining = parser.parse_known_args()
+    if args.command not in {"claude", "codex", "shell"} and remaining:
+        parser.error(f"unrecognized arguments: {' '.join(remaining)}")
+
+    args.args = remaining[1:] if remaining[:1] == ["--"] else remaining
+    return args
+
+
+def main() -> None:
+    args = parse_args()
+    docker = Docker()
+
+    if args.command == "auth":
+        docker.run(["info"], capture=True)
+        network = load_network_config()
+        ensure_network(docker)
+        ensure_gateway(docker, network)
+        if args.provider == "claude":
+            configure_claude_auth(docker)
+        else:
+            sync_codex_auth(docker)
+            print("Codex authentication synchronized with the gateway volume.")
+        return
+
+    workspace = validate_workspace(Path.cwd())
+    if args.command == "claude":
+        run_claude(docker, workspace, args.args)
+    elif args.command == "codex":
+        run_codex(docker, workspace, args.args)
+    elif args.command == "shell":
+        container = prepare(docker, workspace)
+        exec_in_agent(docker, container, ["bash", *args.args])
+    elif args.command == "recreate":
+        recreate_agent(docker, workspace)
+    elif args.command == "stop":
+        stop_agent(docker, workspace)
+    elif args.command == "remove":
+        remove_agent(docker, workspace)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,27 @@
+[network]
+services = ["github", "npm", "cargo", "pypi"]
+
+[services.github]
+hosts = [
+    "github.com",
+    "api.github.com",
+    "*.githubusercontent.com",
+    "codeload.github.com",
+    "ghcr.io",
+]
+
+[services.npm]
+hosts = ["registry.npmjs.org"]
+
+[services.cargo]
+hosts = [
+    "crates.io",
+    "index.crates.io",
+    "static.crates.io",
+]
+
+[services.pypi]
+hosts = [
+    "pypi.org",
+    "files.pythonhosted.org",
+]
