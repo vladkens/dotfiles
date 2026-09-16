@@ -14,6 +14,8 @@
 - Keep diffs as small and focused as possible.
 - Before adding anything new, inspect nearby files and follow local patterns. Add only what the task requires.
 - Do not expand a direct request into adjacent work. Perform only the actions required to produce the requested result unless the user explicitly asks for more.
+- Do not add or update documentation, research notes, or support files unless the user explicitly asks.
+- Treat tests written during implementation as temporary validation. Keep only minimal focused regressions that protect meaningful behavior; remove ad-hoc test code before handoff.
 - Run tests, linters, type checks, builds, and diagnostics only to validate changes made for the current request. Do not repeat checks for unchanged work or treat validation as a prerequisite for a later workflow action.
 - Change work that is still under development directly. Do not add migrations or compatibility layers for uncommitted changes or feature-branch behavior unless explicitly requested.
 - Preserve compatibility for behavior or data already shipped or in use. Ask if unsure.
