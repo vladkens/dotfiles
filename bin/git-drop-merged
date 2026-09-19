@@ -27,6 +27,24 @@ def list_branches(git_root: Path) -> list[str]:
     return [branch for branch in branches.splitlines() if branch not in protected]
 
 
+def list_worktree_branches(git_root: Path) -> dict[str, Path]:
+    metadata = output(
+        ["git", "worktree", "list", "--porcelain", "-z"],
+        cwd=git_root,
+    )
+    branches = {}
+    worktree = None
+
+    for field in metadata.split("\0"):
+        if field.startswith("worktree "):
+            worktree = Path(field.removeprefix("worktree "))
+        elif field.startswith("branch refs/heads/") and worktree is not None:
+            branch = field.removeprefix("branch refs/heads/")
+            branches[branch] = worktree
+
+    return branches
+
+
 def find_merged_pr(git_root: Path, branch: str) -> dict[str, object] | None:
     response = output(
         [
@@ -51,18 +69,28 @@ def find_merged_pr(git_root: Path, branch: str) -> dict[str, object] | None:
 def main() -> None:
     git_root = find_git_root()
     branches = list_branches(git_root)
+    worktree_branches = list_worktree_branches(git_root)
     merged = [
         (branch, pull_request)
         for branch in branches
         if (pull_request := find_merged_pr(git_root, branch)) is not None
     ]
 
+    deleted = 0
     for branch, pull_request in merged:
+        if worktree := worktree_branches.get(branch):
+            print(f"Removing worktree {worktree} for {branch}")
+            run(
+                ["git", "worktree", "remove", "--force", str(worktree)],
+                cwd=git_root,
+            )
+
         print(f"Deleting {branch} (#{pull_request['number']}) {pull_request['url']}")
         run(["git", "branch", "-D", "--", branch], cwd=git_root)
+        deleted += 1
 
-    noun = "branch" if len(merged) == 1 else "branches"
-    print(f"Deleted {len(merged)} merged PR {noun}.")
+    noun = "branch" if deleted == 1 else "branches"
+    print(f"Deleted {deleted} merged PR {noun}.")
 
 
 if __name__ == "__main__":
