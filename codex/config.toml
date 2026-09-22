@@ -100,3 +100,6 @@ trusted_hash = "sha256:26b1a4f0b9a097e8f46d0db39efb93e7bb8c906c4f2ef092680c167de
 
 [hooks.state."codex-tools@dotfiles:hooks/hooks.json:permission_request:0:0"]
 trusted_hash = "sha256:693ae2289c4e6978086fca47bc1bcf79d7bf8db69b10d555db7b543bff008d31"
+
+[hooks.state."codex-tools@dotfiles:hooks/hooks.json:session_start:0:0"]
+trusted_hash = "sha256:e2be77910c04971aef3f8f9a9786d5d3e88191b2fdcdbfa7f32fd1aae68ec925"

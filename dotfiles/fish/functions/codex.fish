@@ -1,4 +1,7 @@
 function codex --description 'Start Codex with a random pet'
+	set -l session_file "$TMPDIR"codex-session-$fish_pid
+	set -lx CODEX_SESSION_FILE "$session_file"
+
 	set -l pet_root "$HOME/.codex/pets"
 	if set -q CODEX_HOME; and test -n "$CODEX_HOME"
 		set pet_root "$CODEX_HOME/pets"
