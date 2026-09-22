@@ -14,3 +14,12 @@ shell-integration-features = ssh-terminfo,ssh-env
 # keybind = global:cmd+grave_accent=toggle_quick_terminal
 keybind = ctrl+grave_accent=toggle_quick_terminal
 keybind = cmd+shift+k=clear_screen
+
+# Keep Codex and shell Ctrl shortcuts working across keyboard layouts.
+keybind = ctrl+key_c=text:\x03
+keybind = ctrl+key_d=text:\x04
+keybind = ctrl+key_g=text:\x07
+keybind = ctrl+key_l=text:\x0c
+keybind = ctrl+key_r=text:\x12
+keybind = ctrl+key_t=text:\x14
+keybind = ctrl+key_v=text:\x16
