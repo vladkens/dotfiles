@@ -4,10 +4,17 @@ function codex --description 'Start Codex with a random pet'
 		set pet_root "$CODEX_HOME/pets"
 	end
 
-	set -l pets
+	set -l manifests
 	for pet_dir in $pet_root/*/
 		if test -f "$pet_dir/pet.json"
-			set -a pets "custom:"(path basename "$pet_dir")
+			set -a manifests "$pet_dir/pet.json"
+		end
+	end
+
+	set -l pets
+	if test (count $manifests) -gt 0
+		for manifest in (jq -r 'select(.spriteVersionNumber == null or .spriteVersionNumber == 1) | input_filename' $manifests)
+			set -a pets "custom:"(path basename (path dirname "$manifest"))
 		end
 	end
 
