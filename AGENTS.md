@@ -11,6 +11,12 @@ This repository is the source of truth for personal dotfiles and agent extension
 - Use concise, concrete wording with only enough context to preserve behavior and clarify real boundaries.
 - Preserve approved structure and meaning when simplifying instructions unless the user asks to change them.
 
+## Python scripts
+
+- Never use `from __future__ import annotations` in Python scripts.
+- Name Python scripts with kebab-case filenames.
+- Write Python scripts with inline uv script metadata so they run with `uv run --script <path>`.
+
 ## Codex skills
 
 Define each Codex skill in its `SKILL.md`; omit `agents/openai.yaml` in this repository.
