@@ -23,6 +23,18 @@
         ],
         "matcher": "^Bash$"
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "jq -r .session_id > \"${CODEX_SESSION_FILE:-/dev/null}\"",
+            "timeout": 3,
+            "type": "command"
+          }
+        ],
+        "matcher": "^(startup|resume)$"
+      }
     ]
   }
 }
