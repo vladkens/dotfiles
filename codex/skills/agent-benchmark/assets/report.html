@@ -1,0 +1,1208 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Сравнение агентов</title>
+    <script>
+      ;(() => {
+        const storageKey = "agent-benchmark-theme"
+        const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
+        let choice = "system"
+        try {
+          const saved = localStorage.getItem(storageKey)
+          if (["system", "light", "dark"].includes(saved)) choice = saved
+        } catch {
+          /* Storage can be unavailable for local files or private browsing. */
+        }
+
+        function applyTheme() {
+          document.documentElement.dataset.theme =
+            choice === "system" ? (systemTheme.matches ? "dark" : "light") : choice
+        }
+
+        // Apply before styles and page content to avoid flashing the wrong theme.
+        applyTheme()
+        systemTheme.addEventListener("change", applyTheme)
+        document.addEventListener("DOMContentLoaded", () => {
+          const select = document.getElementById("theme-select")
+          select.value = choice
+          select.addEventListener("change", () => {
+            choice = select.value
+            applyTheme()
+            try {
+              localStorage.setItem(storageKey, choice)
+            } catch {
+              /* The selection still works for this page without persistence. */
+            }
+          })
+        })
+      })()
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+        color: var(--text);
+        background: var(--page);
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font-synthesis: none;
+        --page: #171926;
+        --text: #f4f4f0;
+        --panel: #202332;
+        --panel-strong: #262a3a;
+        --surface: #1b1e2c;
+        --section: #181b28;
+        --line: #383d51;
+        --control-line: #52586f;
+        --muted: #a4abc0;
+        --copy: #d7d9e4;
+        --mint: #75d7be;
+        --error: #efaa9b;
+        --code: #171a27;
+        --code-copy: #b9e1d6;
+        --bar: #303448;
+        --scrollbar: #606780;
+        --shadow: #08090f55;
+        --column-1: var(--mint);
+        --column-2: #b7a1ff;
+        --column-3: #eab66a;
+        --column-4: #76b8f5;
+        --accent: var(--mint);
+      }
+
+      :root[data-theme="light"] {
+        color-scheme: light;
+        --page: #f5f6f8;
+        --text: #172333;
+        --panel: #ffffff;
+        --panel-strong: #e7edf2;
+        --surface: #eef1f5;
+        --section: #e8edf3;
+        --line: #d1d9e2;
+        --control-line: #8795a7;
+        --muted: #526174;
+        --copy: #263446;
+        --mint: #12735e;
+        --error: #a33727;
+        --code: #edf3f1;
+        --code-copy: #165f50;
+        --bar: #dce3e9;
+        --scrollbar: #8795a7;
+        --shadow: #26344918;
+        --column-2: #6844b3;
+        --column-3: #8e560d;
+        --column-4: #2363a4;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      /* Keep the page and main overflow visible: sticky uses the viewport, not an
+   accidental overflow-x:hidden scroll ancestor. Only the two tracks scroll. */
+      body {
+        min-width: 320px;
+        min-height: 100vh;
+        margin: 0;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      main {
+        width: min(100%, 2200px);
+        margin: 0 auto;
+        padding: 26px 24px;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+      button {
+        color: inherit;
+        cursor: pointer;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      [tabindex]:focus-visible {
+        outline: 2px solid var(--mint);
+        outline-offset: -2px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(540px, 1fr);
+        gap: 25px;
+        align-items: end;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .eyebrow,
+      .section-kicker {
+        margin: 0;
+        color: var(--mint);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 10px 0;
+        font-size: clamp(30px, 4vw, 54px);
+        line-height: 1.05;
+        letter-spacing: -0.06em;
+        overflow-wrap: anywhere;
+      }
+      .hero p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .summary-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1px;
+        border: 1px solid var(--line);
+        background: var(--line);
+      }
+      .summary-item {
+        min-width: 0;
+        padding: 12px;
+        background: var(--panel);
+      }
+      .summary-item:last-child {
+        grid-column: span 2;
+      }
+      .summary-item span,
+      .metric span {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--muted);
+        font-size: 9px;
+        line-height: 1.4;
+      }
+      .summary-item strong {
+        font-size: 15px;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .prompt-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 20px;
+        align-items: center;
+        margin: 16px 0 10px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+      }
+      .prompt-panel p {
+        margin: 8px 0 0;
+        max-height: 160px;
+        overflow: hidden;
+        color: var(--copy);
+        font-size: 12px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .prompt-panel p.is-expanded {
+        max-height: none;
+      }
+      #toggle-prompt {
+        margin-top: 10px;
+      }
+      .prompt-panel button,
+      footer button {
+        padding: 10px 12px;
+        border: 1px solid var(--control-line);
+        background: var(--panel-strong);
+        font-size: 11px;
+      }
+      button:hover {
+        border-color: var(--mint);
+      }
+      .comparison-sticky {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: var(--page);
+        box-shadow: 0 12px 24px var(--shadow);
+      }
+      .model-filter {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+      }
+      .filter-copy {
+        margin-right: auto;
+      }
+      .filter-copy p {
+        margin: 5px 0 0;
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .model-toggles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .model-toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 8px;
+        border: 1px solid var(--control-line);
+        border-top: 2px solid var(--accent);
+        background: var(--panel);
+        color: var(--copy);
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .model-toggle[data-visible="false"] {
+        border-top-color: var(--control-line);
+        color: var(--muted);
+      }
+      .model-toggle input {
+        margin: 0;
+        accent-color: var(--accent);
+      }
+      .model-toggle input:disabled {
+        cursor: not-allowed;
+      }
+      .view-switch {
+        display: flex;
+        border: 1px solid var(--control-line);
+      }
+      .view-switch button {
+        padding: 9px 11px;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .view-switch button + button {
+        border-left: 1px solid var(--control-line);
+      }
+      .view-switch button[aria-pressed="true"] {
+        background: var(--panel-strong);
+        color: var(--mint);
+      }
+      .theme-picker {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .theme-picker select {
+        min-height: 32px;
+        padding: 6px;
+        border: 1px solid var(--control-line);
+        border-radius: 0;
+        background: var(--panel);
+        color: var(--text);
+        cursor: pointer;
+      }
+      .horizontal-scroll {
+        width: 100%;
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-top: 0;
+        scrollbar-color: var(--scrollbar) var(--surface);
+        scrollbar-width: thin;
+      }
+      .matrix {
+        display: grid;
+        grid-template-columns: repeat(var(--columns, 4), minmax(0, 1fr));
+        gap: 1px;
+        min-width: max(100%, var(--track-width, 1280px));
+        background: var(--line);
+      }
+      .matrix-cell {
+        min-width: 0;
+        background: var(--panel);
+      }
+      .model-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 13px;
+        border-top: 3px solid var(--accent);
+      }
+      .model-identity {
+        min-width: 0;
+      }
+      .run-label {
+        display: block;
+        color: var(--accent);
+        font-size: 9px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .model-title {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-top: 7px;
+      }
+      .model-title h2 {
+        margin: 0;
+        font-size: 18px;
+        letter-spacing: -0.045em;
+        overflow-wrap: anywhere;
+      }
+      .effort {
+        padding: 3px 5px;
+        border: 1px solid var(--control-line);
+        color: var(--muted);
+        font-size: 9px;
+      }
+      .status {
+        display: block;
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .status[data-status="completed"] {
+        color: var(--mint);
+      }
+      .status[data-status="failed"],
+      .status[data-status="timed_out"] {
+        color: var(--error);
+      }
+      .section-row {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 12px;
+        padding: 10px 13px;
+        background: var(--section);
+      }
+      .section-row h2 {
+        margin: 0;
+        color: var(--copy);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .section-row p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .header-metrics {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .metric {
+        white-space: nowrap;
+      }
+      .metric strong {
+        font-size: 16px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .token-stats {
+        padding: 12px 13px;
+      }
+      .token-stats-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 9px;
+        color: var(--muted);
+        font-size: 9px;
+      }
+      .token-bar {
+        height: 3px;
+        background: var(--bar);
+      }
+      .token-bar span {
+        display: block;
+        height: 100%;
+        background: var(--accent);
+      }
+      .token-stats dl {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin: 14px 0 0;
+      }
+      .token-stats dt {
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .token-stats dd {
+        margin: 5px 0 0;
+        color: var(--copy);
+        font-size: 13px;
+      }
+      .token-stats small {
+        display: block;
+        margin-top: 13px;
+        color: var(--muted);
+        font-size: 9px;
+        line-height: 1.5;
+      }
+      .error-note {
+        margin: 0;
+        padding: 11px 13px;
+        border-top: 1px solid var(--line);
+        color: var(--error);
+        font-size: 11px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .markdown {
+        padding: 15px 15px 24px;
+        color: var(--copy);
+        font-family:
+          ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        font-size: 13px;
+        line-height: 1.65;
+        overflow-wrap: anywhere;
+      }
+      .markdown > :first-child {
+        margin-top: 0;
+      }
+      .markdown h1,
+      .markdown h2,
+      .markdown h3,
+      .markdown h4 {
+        margin: 1.6em 0 0.6em;
+        color: var(--text);
+        font-family: ui-monospace, Menlo, monospace;
+        letter-spacing: -0.035em;
+      }
+      .markdown h1 {
+        font-size: 20px;
+      }
+      .markdown h2 {
+        font-size: 17px;
+      }
+      .markdown h3,
+      .markdown h4 {
+        font-size: 14px;
+      }
+      .markdown p,
+      .markdown ul,
+      .markdown ol {
+        margin: 0.8em 0;
+      }
+      .markdown ul,
+      .markdown ol {
+        padding-left: 1.5em;
+      }
+      .markdown a {
+        color: var(--accent);
+        text-underline-offset: 3px;
+      }
+      .markdown code {
+        padding: 0.15em 0.3em;
+        background: var(--code);
+        color: var(--code-copy);
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 0.88em;
+      }
+      .markdown pre {
+        padding: 11px;
+        border: 1px solid var(--line);
+        background: var(--code);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .markdown pre code {
+        padding: 0;
+        background: none;
+      }
+      .markdown table {
+        display: block;
+        width: 100%;
+        overflow-x: auto;
+        border-collapse: collapse;
+        font-size: 11px;
+      }
+      .markdown th,
+      .markdown td {
+        padding: 7px 8px;
+        border: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+      .markdown th {
+        background: var(--panel-strong);
+      }
+      .markdown blockquote {
+        margin-left: 0;
+        padding-left: 12px;
+        border-left: 2px solid var(--accent);
+        color: var(--muted);
+      }
+      .markdown hr {
+        border: 0;
+        border-top: 1px solid var(--line);
+      }
+      .markdown img {
+        max-width: 100%;
+      }
+      .patch {
+        border-top: 1px solid var(--line);
+      }
+      .patch > h3 {
+        margin: 0;
+        padding: 14px 15px 0;
+        color: var(--accent);
+        font-size: 11px;
+      }
+      .empty-note {
+        padding: 16px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .timeline-wrap {
+        padding: 14px 14px 24px;
+      }
+      .timeline-note {
+        margin: 0 0 14px;
+        padding: 9px 10px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.5;
+      }
+      .timeline {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .timeline-item {
+        display: grid;
+        grid-template-columns: 47px minmax(0, 1fr);
+        gap: 8px;
+        padding: 12px 0;
+        border-top: 1px solid var(--line);
+      }
+      .timeline-item:first-child {
+        border-top: 0;
+      }
+      .timeline-item time {
+        padding-top: 2px;
+        color: var(--muted);
+        font-size: 9px;
+      }
+      .timeline-item strong {
+        color: var(--accent);
+        font-size: 11px;
+        overflow-wrap: anywhere;
+      }
+      .timeline-item pre {
+        margin: 7px 0 0;
+        color: var(--copy);
+        font: inherit;
+        font-size: 11px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+        padding-top: 20px;
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 1150px) {
+        .hero {
+          grid-template-columns: 1fr;
+          gap: 18px;
+        }
+        .summary-strip {
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+        .summary-item:last-child {
+          grid-column: auto;
+        }
+        .filter-copy {
+          flex: 1 0 100%;
+        }
+        .model-toggles {
+          flex: 1;
+        }
+      }
+
+      @media (max-width: 650px) {
+        main {
+          padding: 16px 10px;
+        }
+        .summary-strip {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .summary-item:last-child {
+          grid-column: span 2;
+        }
+        .prompt-panel {
+          grid-template-columns: 1fr;
+          gap: 13px;
+          padding: 13px;
+        }
+        .prompt-panel button {
+          justify-self: start;
+        }
+        .model-filter {
+          gap: 8px;
+          padding: 8px;
+        }
+        .filter-copy {
+          display: none;
+        }
+        .model-toggles {
+          flex-basis: 100%;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .model-toggle {
+          min-width: 0;
+          padding: 6px;
+          font-size: 10px;
+        }
+        .model-toggle span {
+          overflow-wrap: anywhere;
+        }
+        .view-switch {
+          flex: 1;
+        }
+        .view-switch button {
+          flex: 1;
+          padding: 7px;
+        }
+        .model-header {
+          padding: 9px 11px;
+        }
+        .model-title h2 {
+          font-size: 16px;
+        }
+        .status {
+          margin-top: 5px;
+        }
+        footer {
+          align-items: start;
+          flex-direction: column;
+          gap: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div>
+          <span class="eyebrow">Agent benchmark</span>
+          <h1 id="report-title">Сравнение агентов</h1>
+          <p id="report-date">Одинаковая задача. Независимые запуски.</p>
+        </div>
+        <div id="summary" class="summary-strip" aria-label="Итоги всех запусков"></div>
+      </section>
+
+      <section class="prompt-panel">
+        <div>
+          <h2 class="section-kicker">Общий запрос</h2>
+          <p id="prompt"></p>
+          <button
+            id="toggle-prompt"
+            type="button"
+            aria-controls="prompt"
+            aria-expanded="false"
+            hidden
+          >
+            Развернуть запрос
+          </button>
+        </div>
+        <button id="copy-prompt" type="button">Скопировать запрос</button>
+      </section>
+
+      <div class="comparison-sticky">
+        <section class="model-filter" aria-label="Настройки сравнения">
+          <div class="filter-copy">
+            <h2 class="section-kicker">Колонки сравнения</h2>
+            <p id="visible-count" aria-live="polite"></p>
+          </div>
+          <div id="model-toggles" class="model-toggles"></div>
+          <div class="view-switch" role="group" aria-label="Что сравнивать">
+            <button type="button" data-mode="result" aria-pressed="true">Результаты</button>
+            <button type="button" data-mode="timeline" aria-pressed="false">Ход работы</button>
+          </div>
+          <label class="theme-picker"
+            >Тема
+            <select id="theme-select">
+              <option value="system">Системная</option>
+              <option value="light">Светлая</option>
+              <option value="dark">Тёмная</option>
+            </select>
+          </label>
+        </section>
+        <div
+          id="header-scroll"
+          class="horizontal-scroll header-scroll"
+          tabindex="0"
+          role="region"
+          aria-label="Заголовки моделей; можно прокручивать по горизонтали"
+        >
+          <div id="model-headers" class="matrix"></div>
+        </div>
+      </div>
+
+      <section
+        id="comparison-scroll"
+        class="horizontal-scroll comparison-scroll"
+        tabindex="0"
+        aria-label="Таблица сравнения; можно прокручивать по горизонтали"
+      >
+        <div id="comparison" class="matrix"></div>
+      </section>
+
+      <footer>
+        <span>Комментарии и действия агентов. Скрытые рассуждения не включены.</span>
+        <button id="download-report" type="button">Скачать данные отчёта</button>
+      </footer>
+      <noscript>Для переключения колонок и просмотра отчёта включите JavaScript.</noscript>
+    </main>
+    <script id="report-data" type="application/json">
+      __REPORT_DATA__
+    </script>
+    <script>
+      ;(() => {
+        "use strict"
+
+        const report = JSON.parse(document.getElementById("report-data").textContent)
+        const runs = report.runs || []
+        const hidden = new Set()
+        const numbers = new Intl.NumberFormat("ru-RU")
+        const statuses = {
+          completed: "Завершён",
+          failed: "Ошибка",
+          timed_out: "Превышено время",
+          cancelled: "Остановлен",
+          running: "Выполняется",
+          pending: "Ожидает запуска",
+          incomplete: "Нет записи о завершении",
+        }
+        const headers = document.getElementById("model-headers")
+        const comparison = document.getElementById("comparison")
+        const headerScroll = document.getElementById("header-scroll")
+        const bodyScroll = document.getElementById("comparison-scroll")
+        let mode = "result"
+
+        function element(tag, className, text) {
+          const node = document.createElement(tag)
+          if (className) node.className = className
+          if (text !== undefined && text !== null) node.textContent = String(text)
+          return node
+        }
+
+        function known(value) {
+          return typeof value === "number" && Number.isFinite(value) && value >= 0
+        }
+
+        function duration(value) {
+          if (!known(value)) return "—"
+          const seconds = Math.round(value)
+          const hours = Math.floor(seconds / 3600)
+          const minutes = Math.floor((seconds % 3600) / 60)
+          const remainder = String(seconds % 60).padStart(2, "0")
+          return hours
+            ? `${hours}:${String(minutes).padStart(2, "0")}:${remainder}`
+            : `${minutes}:${remainder}`
+        }
+
+        function tokens(value) {
+          if (!known(value)) return "—"
+          if (value >= 1e6) return `${numbers.format(Math.round(value / 1e4) / 100)} млн`
+          if (value >= 1e4) return `${numbers.format(Math.round(value / 1e2) / 10)} тыс.`
+          return numbers.format(value)
+        }
+
+        function total(run) {
+          const usage = run.tokens || {}
+          return known(usage.input) && known(usage.output)
+            ? usage.input + usage.output
+            : usage.total
+        }
+
+        function sum(values) {
+          return values.length && values.every(known) ? values.reduce((a, b) => a + b, 0) : null
+        }
+
+        function accent(node, index) {
+          node.style.setProperty("--accent", `var(--column-${(index % 4) + 1})`)
+          return node
+        }
+
+        function numberNode(tag, value, format) {
+          const node = element(tag, "", format(value))
+          if (known(value)) node.title = numbers.format(value)
+          return node
+        }
+
+        function summaryItem(label, value) {
+          const node = element("div", "summary-item")
+          node.append(element("span", "", label), element("strong", "", value))
+          return node
+        }
+
+        function renderSummary() {
+          const finished = runs.filter(
+            run => run.status === "completed" && known(run.duration_seconds),
+          )
+          const fastest = finished.reduce(
+            (best, run) => (!best || run.duration_seconds < best.duration_seconds ? run : best),
+            null,
+          )
+          const allTokens = sum(runs.map(total))
+          const summary = document.getElementById("summary")
+          summary.append(
+            summaryItem("Запусков", runs.length),
+            summaryItem("Время всего прогона", duration(report.wall_seconds)),
+            summaryItem(
+              "Сумма времени агентов",
+              duration(sum(runs.map(run => run.duration_seconds))),
+            ),
+            summaryItem("Всего токенов", tokens(allTokens)),
+            summaryItem(
+              "Быстрейший завершённый",
+              fastest ? `${fastest.model} · ${duration(fastest.duration_seconds)}` : "—",
+            ),
+          )
+          summary.children[1].title =
+            "Время от начала до завершения всего прогона с учётом параллельной работы."
+          summary.children[2].title =
+            "Сумма длительностей отдельных запусков; при параллельной работе больше общего времени."
+          summary.children[3].title = known(allTokens)
+            ? `${numbers.format(allTokens)} токенов`
+            : "У одного или нескольких запусков нет статистики токенов."
+        }
+
+        function renderToggles() {
+          const toggles = document.getElementById("model-toggles")
+          runs.forEach((run, index) => {
+            const label = accent(element("label", "model-toggle"), index)
+            label.dataset.visible = "true"
+            const input = element("input")
+            input.type = "checkbox"
+            input.checked = true
+            input.setAttribute(
+              "aria-label",
+              `Показать ${run.model}${run.effort ? `, ${run.effort}` : ""}, ${run.label || `запуск ${index + 1}`}`,
+            )
+            input.addEventListener("change", () => {
+              if (input.checked) hidden.delete(index)
+              else hidden.add(index)
+              renderComparison()
+            })
+            label.append(input, element("span", "", run.model))
+            toggles.append(label)
+          })
+        }
+
+        function renderHeader(run, index) {
+          const node = accent(element("header", "matrix-cell model-header"), index)
+          const identity = element("div", "model-identity")
+          const title = element("div", "model-title")
+          title.append(element("h2", "", run.model))
+          if (run.effort) title.append(element("span", "effort", run.effort))
+          const status = element(
+            "span",
+            "status",
+            statuses[run.status] || run.status || "Статус неизвестен",
+          )
+          status.dataset.status = run.status || "unknown"
+          identity.append(
+            element(
+              "span",
+              "run-label",
+              run.label || `Запуск ${String(index + 1).padStart(2, "0")}`,
+            ),
+            title,
+            status,
+          )
+
+          const metrics = element("div", "header-metrics")
+          const elapsed = element("div", "metric")
+          elapsed.title = "Время агента с учётом ожидания модели и инструментов."
+          elapsed.append(
+            element("span", "", "Время"),
+            element("strong", "", duration(run.duration_seconds)),
+          )
+          const consumed = element("div", "metric")
+          consumed.title = "Токены: вход + выход за весь запуск. Кеш уже включён во вход."
+          consumed.append(element("span", "", "Токены"), numberNode("strong", total(run), tokens))
+          metrics.append(elapsed, consumed)
+          node.append(identity, metrics)
+          return node
+        }
+
+        function sectionRow(title, note) {
+          const node = element("div", "section-row")
+          node.append(element("h2", "", title), element("p", "", note))
+          return node
+        }
+
+        function renderMetrics(run, index, maximum) {
+          const node = accent(element("section", "matrix-cell"), index)
+          node.setAttribute("aria-label", `Метрики ${run.model}`)
+          const usage = run.tokens || {}
+          const stats = element("div", "token-stats")
+          const statsHeader = element("div", "token-stats-header")
+          const cacheShare =
+            known(usage.cached_input) && known(usage.input) && usage.input > 0
+              ? `${Math.round((usage.cached_input / usage.input) * 100)}% входа из кеша`
+              : "Доля кеша: —"
+          statsHeader.append(
+            element("span", "", "Структура токенов"),
+            element("span", "", cacheShare),
+          )
+          const bar = element("div", "token-bar")
+          const fill = element("span")
+          const ratio =
+            known(total(run)) && maximum > 0 ? Math.min(100, (total(run) / maximum) * 100) : 0
+          fill.style.width = `${ratio}%`
+          bar.append(fill)
+          bar.title = "Общий расход относительно самого большого расхода в этом отчёте."
+          const list = element("dl")
+          for (const [label, value] of [
+            ["Вход всего", usage.input],
+            ["↳ из кеша", usage.cached_input],
+            ["Выход всего", usage.output],
+            ["↳ reasoning", usage.reasoning],
+          ]) {
+            const item = element("div")
+            item.append(element("dt", "", label), numberNode("dd", value, tokens))
+            list.append(item)
+          }
+          stats.append(
+            statsHeader,
+            bar,
+            list,
+            element(
+              "small",
+              "",
+              "Кеш входит во вход. Reasoning входит в выход. Это не дополнительные токены.",
+            ),
+          )
+          node.append(stats)
+          if (run.error) node.append(element("p", "error-note", run.error))
+          return node
+        }
+
+        function sanitizedMarkdown(html) {
+          const node = element("div", "markdown")
+          // HTML is rendered and sanitized by the report generator before embedding.
+          node.innerHTML = html
+          return node
+        }
+
+        function renderAnswer(run, index) {
+          const node = accent(element("section", "matrix-cell"), index)
+          node.setAttribute("aria-label", `Результат ${run.model}`)
+          node.append(
+            run.final_html
+              ? sanitizedMarkdown(run.final_html)
+              : element("p", "empty-note", "Финальный ответ отсутствует."),
+          )
+          if (run.patch_html) {
+            const patch = element("section", "patch")
+            patch.append(element("h3", "", "Изменения файлов"), sanitizedMarkdown(run.patch_html))
+            node.append(patch)
+          }
+          return node
+        }
+
+        function renderTimeline(run, index) {
+          const node = accent(element("section", "matrix-cell timeline-wrap"), index)
+          node.setAttribute("aria-label", `Ход работы ${run.model}`)
+          const events = run.timeline || []
+          node.append(
+            element(
+              "p",
+              "timeline-note",
+              `Событий: ${numbers.format(events.length)}. Время указано от начала запуска. Комментарии, действия и доступные краткие сводки после очистки. Сырые ответы инструментов исключены.`,
+            ),
+          )
+          if (!events.length) {
+            node.append(element("p", "empty-note", "В этом запуске нет записанных событий."))
+            return node
+          }
+          const list = element("ol", "timeline")
+          for (const event of events) {
+            const item = element("li", "timeline-item")
+            const time = element(
+              "time",
+              "",
+              known(event.at_seconds) ? `+${duration(event.at_seconds)}` : "—",
+            )
+            const body = element("div")
+            body.append(element("strong", "", event.title || event.kind || "Событие"))
+            if (event.detail) body.append(element("pre", "", event.detail))
+            item.append(time, body)
+            list.append(item)
+          }
+          node.append(list)
+          return node
+        }
+
+        function renderComparison() {
+          const visible = runs
+            .map((run, index) => ({ run, index }))
+            .filter(({ index }) => !hidden.has(index))
+          const previousScroll = bodyScroll.scrollLeft
+          headers.replaceChildren()
+          comparison.replaceChildren()
+          for (const track of [headers, comparison]) {
+            track.style.setProperty("--columns", Math.max(1, visible.length))
+            track.style.setProperty("--track-width", `${Math.max(1, visible.length) * 320}px`)
+          }
+          document.getElementById("visible-count").textContent =
+            `Видно ${visible.length} из ${runs.length}. Скрывай модели, чтобы читать шире.`
+          document.querySelectorAll(".model-toggle").forEach((label, index) => {
+            const input = label.querySelector("input")
+            input.checked = !hidden.has(index)
+            input.disabled = input.checked && visible.length === 1
+            label.dataset.visible = String(input.checked)
+          })
+          if (!visible.length) {
+            comparison.append(element("p", "empty-note matrix-cell", "В отчёте нет запусков."))
+            return
+          }
+          for (const { run, index } of visible) headers.append(renderHeader(run, index))
+          comparison.append(sectionRow("01 · Токены", "Подробный расход каждого запуска."))
+          const maximum = Math.max(0, ...runs.map(total).filter(known))
+          for (const { run, index } of visible)
+            comparison.append(renderMetrics(run, index, maximum))
+          comparison.append(
+            sectionRow(
+              mode === "result" ? "02 · Результаты" : "02 · Ход работы",
+              mode === "result"
+                ? "Полные ответы и изменения файлов."
+                : "События каждого агента в порядке выполнения.",
+            ),
+          )
+          for (const { run, index } of visible)
+            comparison.append(
+              mode === "result" ? renderAnswer(run, index) : renderTimeline(run, index),
+            )
+          bodyScroll.scrollLeft = previousScroll
+          headerScroll.scrollLeft = bodyScroll.scrollLeft
+        }
+
+        for (const [source, target] of [
+          [headerScroll, bodyScroll],
+          [bodyScroll, headerScroll],
+        ]) {
+          source.addEventListener(
+            "scroll",
+            () => {
+              if (Math.abs(source.scrollLeft - target.scrollLeft) > 1)
+                target.scrollLeft = source.scrollLeft
+            },
+            { passive: true },
+          )
+        }
+
+        document.querySelectorAll("[data-mode]").forEach(button => {
+          button.addEventListener("click", () => {
+            mode = button.dataset.mode
+            document
+              .querySelectorAll("[data-mode]")
+              .forEach(tab => tab.setAttribute("aria-pressed", String(tab.dataset.mode === mode)))
+            renderComparison()
+          })
+        })
+
+        document.getElementById("copy-prompt").addEventListener("click", async event => {
+          const button = event.currentTarget
+          try {
+            await navigator.clipboard.writeText(report.prompt || "")
+            button.textContent = "Скопировано"
+          } catch {
+            const selection = window.getSelection()
+            const range = document.createRange()
+            range.selectNodeContents(document.getElementById("prompt"))
+            selection.removeAllRanges()
+            selection.addRange(range)
+            button.textContent = "Запрос выделен: Ctrl/Cmd+C"
+          }
+          window.setTimeout(() => {
+            button.textContent = "Скопировать запрос"
+          }, 2500)
+        })
+
+        document.getElementById("download-report").addEventListener("click", () => {
+          const url = URL.createObjectURL(
+            new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }),
+          )
+          const anchor = element("a")
+          anchor.href = url
+          anchor.download = "agent-benchmark.json"
+          anchor.click()
+          window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+        })
+
+        document.title = report.title || "Сравнение агентов"
+        document.getElementById("report-title").textContent = document.title
+        const prompt = document.getElementById("prompt")
+        const promptToggle = document.getElementById("toggle-prompt")
+        prompt.textContent = report.prompt || "Запрос не сохранён."
+
+        function setPromptExpanded(expanded) {
+          prompt.classList.toggle("is-expanded", expanded)
+          promptToggle.setAttribute("aria-expanded", String(expanded))
+          promptToggle.textContent = expanded ? "Свернуть запрос" : "Развернуть запрос"
+        }
+
+        function updatePromptToggle() {
+          promptToggle.hidden = prompt.scrollHeight <= 160
+          if (promptToggle.hidden) setPromptExpanded(false)
+        }
+
+        promptToggle.addEventListener("click", () => {
+          setPromptExpanded(promptToggle.getAttribute("aria-expanded") !== "true")
+        })
+        new ResizeObserver(updatePromptToggle).observe(prompt)
+        updatePromptToggle()
+        if (report.created_at) {
+          const created = new Date(report.created_at)
+          if (!Number.isNaN(created.getTime()))
+            document.getElementById("report-date").textContent +=
+              ` Отчёт: ${created.toLocaleString("ru-RU")}.`
+        }
+        renderSummary()
+        renderToggles()
+        renderComparison()
+      })()
+    </script>
+  </body>
+</html>
