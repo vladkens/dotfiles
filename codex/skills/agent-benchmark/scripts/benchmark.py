@@ -271,24 +271,24 @@ def parse_events(path, turn=1):
         if kind == "item.completed" and item_type == "agent_message":
             detail = item.get("text", "")
             result["final_answer"] = detail
-            public_kind, title = "update", "Комментарий агента"
+            public_kind, title = "update", "Agent comment"
         elif kind == "response_item" and item_type == "message" and item.get("role") == "assistant":
             detail = message_text(item)
             if item.get("phase") in {"final_answer", "final"} or item.get("channel") == "final":
                 result["final_answer"] = detail
             elif item.get("phase") == "commentary" or item.get("channel") == "commentary":
-                public_kind, title = "update", "Комментарий агента"
+                public_kind, title = "update", "Agent comment"
         elif kind == "item.completed" and item_type == "reasoning":
             # Only the CLI's already-exposed summary, never raw rollout reasoning payloads.
-            public_kind, title, detail = "summary", "Краткая сводка", item.get("text", "")
+            public_kind, title, detail = "summary", "Summary", item.get("text", "")
         elif item_type in {"command_execution", "mcp_tool_call", "web_search", "file_change"}:
             public_kind, title = (
                 "tool",
                 {
-                    "command_execution": "Команда",
-                    "mcp_tool_call": "Инструмент",
-                    "web_search": "Поиск",
-                    "file_change": "Изменение файлов",
+                    "command_execution": "Command",
+                    "mcp_tool_call": "Tool",
+                    "web_search": "Search",
+                    "file_change": "File changes",
                 }[item_type],
             )
             detail = (
@@ -300,7 +300,7 @@ def parse_events(path, turn=1):
             if item.get("exit_code") is not None:
                 detail += f"\nExit code: {item['exit_code']}"
         elif item_type in {"function_call", "custom_tool_call"}:
-            public_kind, title = "tool", str(item.get("name", "Инструмент"))
+            public_kind, title = "tool", str(item.get("name", "Tool"))
             detail = item.get("arguments") or item.get("input") or ""
 
         if public_kind and detail:
@@ -331,7 +331,7 @@ def public_run(run, index, replacements):
 
     result = {
         "id": f"run-{index + 1}",
-        "label": f"Запуск {index + 1:02d}",
+        "label": f"Run {index + 1:02d}",
         "model": clean(run.get("model", "unknown")),
         "effort": clean(run.get("effort", "unknown")),
         "status": run.get("status", "incomplete"),
@@ -358,15 +358,15 @@ def public_run(run, index, replacements):
 def write_report(root, manifest):
     replacements = [(path, label) for path, label in manifest.get("redact_paths", [])]
     report = {
-        "title": "Один запрос. Несколько агентов.",
+        "title": "One prompt. Multiple agents.",
         "prompt": redact(manifest.get("prompt", ""), replacements),
         "created_at": manifest.get("created_at", datetime.now(UTC).isoformat()),
         "wall_seconds": manifest.get("wall_seconds"),
-        "methodology": "Независимые запуски Codex. Время запуска включает ожидание модели и инструментов. "
-        "Токены взяты из usage; неизвестные значения обозначены прочерком. "
-        "Вход включает повторный контекст; кеш входит во вход, reasoning входит в выход. "
-        "Системные инструкции и сырые ответы инструментов не публикуются. "
-        "Ход работы показывает доступные события и краткие сводки, а не полную внутреннюю цепочку рассуждений.",
+        "methodology": "Independent Codex runs. Run time includes waiting for the model and tools. "
+        "Tokens come from reported usage; unknown values are shown as a dash. "
+        "Input includes repeated context; cached tokens are included in input, reasoning in output. "
+        "System instructions and raw tool outputs are not published. "
+        "The work log shows available events and summaries, not the full internal chain of thought.",
         "runs": [
             public_run(run, index, replacements) for index, run in enumerate(manifest["runs"])
         ],

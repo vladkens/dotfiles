@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <title>Сравнение агентов</title>
+    <title>Agent comparison</title>
     <script>
       ;(() => {
         const storageKey = "agent-benchmark-theme"
@@ -722,15 +722,15 @@
       <section class="hero">
         <div>
           <span class="eyebrow">Agent benchmark</span>
-          <h1 id="report-title">Сравнение агентов</h1>
-          <p id="report-date">Одинаковая задача. Независимые запуски.</p>
+          <h1 id="report-title">Agent comparison</h1>
+          <p id="report-date">Same task. Independent runs.</p>
         </div>
-        <div id="summary" class="summary-strip" aria-label="Итоги всех запусков"></div>
+        <div id="summary" class="summary-strip" aria-label="Summary of all runs"></div>
       </section>
 
       <section class="prompt-panel">
         <div>
-          <h2 class="section-kicker">Общий запрос</h2>
+          <h2 class="section-kicker">Shared prompt</h2>
           <p id="prompt"></p>
           <button
             id="toggle-prompt"
@@ -739,29 +739,29 @@
             aria-expanded="false"
             hidden
           >
-            Развернуть запрос
+            Expand prompt
           </button>
         </div>
-        <button id="copy-prompt" type="button">Скопировать запрос</button>
+        <button id="copy-prompt" type="button">Copy prompt</button>
       </section>
 
       <div class="comparison-sticky">
-        <section class="model-filter" aria-label="Настройки сравнения">
+        <section class="model-filter" aria-label="Comparison settings">
           <div class="filter-copy">
-            <h2 class="section-kicker">Колонки сравнения</h2>
+            <h2 class="section-kicker">Model columns</h2>
             <p id="visible-count" aria-live="polite"></p>
           </div>
           <div id="model-toggles" class="model-toggles"></div>
-          <div class="view-switch" role="group" aria-label="Что сравнивать">
-            <button type="button" data-mode="result" aria-pressed="true">Результаты</button>
-            <button type="button" data-mode="timeline" aria-pressed="false">Ход работы</button>
+          <div class="view-switch" role="group" aria-label="Comparison view">
+            <button type="button" data-mode="result" aria-pressed="true">Results</button>
+            <button type="button" data-mode="timeline" aria-pressed="false">Work log</button>
           </div>
           <label class="theme-picker"
-            >Тема
+            >Theme
             <select id="theme-select">
-              <option value="system">Системная</option>
-              <option value="light">Светлая</option>
-              <option value="dark">Тёмная</option>
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
             </select>
           </label>
         </section>
@@ -770,7 +770,7 @@
           class="horizontal-scroll header-scroll"
           tabindex="0"
           role="region"
-          aria-label="Заголовки моделей; можно прокручивать по горизонтали"
+          aria-label="Model headers; scroll horizontally"
         >
           <div id="model-headers" class="matrix"></div>
         </div>
@@ -780,16 +780,16 @@
         id="comparison-scroll"
         class="horizontal-scroll comparison-scroll"
         tabindex="0"
-        aria-label="Таблица сравнения; можно прокручивать по горизонтали"
+        aria-label="Comparison table; scroll horizontally"
       >
         <div id="comparison" class="matrix"></div>
       </section>
 
       <footer>
-        <span>Комментарии и действия агентов. Скрытые рассуждения не включены.</span>
-        <button id="download-report" type="button">Скачать данные отчёта</button>
+        <span>Agent comments and actions. Hidden reasoning is not included.</span>
+        <button id="download-report" type="button">Download report data</button>
       </footer>
-      <noscript>Для переключения колонок и просмотра отчёта включите JavaScript.</noscript>
+      <noscript>Enable JavaScript to switch columns and view the report.</noscript>
     </main>
     <script id="report-data" type="application/json">
       __REPORT_DATA__
@@ -801,15 +801,15 @@
         const report = JSON.parse(document.getElementById("report-data").textContent)
         const runs = report.runs || []
         const hidden = new Set()
-        const numbers = new Intl.NumberFormat("ru-RU")
+        const numbers = new Intl.NumberFormat("en-US")
         const statuses = {
-          completed: "Завершён",
-          failed: "Ошибка",
-          timed_out: "Превышено время",
-          cancelled: "Остановлен",
-          running: "Выполняется",
-          pending: "Ожидает запуска",
-          incomplete: "Нет записи о завершении",
+          completed: "Completed",
+          failed: "Failed",
+          timed_out: "Timed out",
+          cancelled: "Stopped",
+          running: "Running",
+          pending: "Pending",
+          incomplete: "Completion not recorded",
         }
         const headers = document.getElementById("model-headers")
         const comparison = document.getElementById("comparison")
@@ -841,8 +841,8 @@
 
         function tokens(value) {
           if (!known(value)) return "—"
-          if (value >= 1e6) return `${numbers.format(Math.round(value / 1e4) / 100)} млн`
-          if (value >= 1e4) return `${numbers.format(Math.round(value / 1e2) / 10)} тыс.`
+          if (value >= 1e6) return `${numbers.format(Math.round(value / 1e4) / 100)}M`
+          if (value >= 1e4) return `${numbers.format(Math.round(value / 1e2) / 10)}K`
           return numbers.format(value)
         }
 
@@ -885,25 +885,25 @@
           const allTokens = sum(runs.map(total))
           const summary = document.getElementById("summary")
           summary.append(
-            summaryItem("Запусков", runs.length),
-            summaryItem("Время всего прогона", duration(report.wall_seconds)),
+            summaryItem("Runs", runs.length),
+            summaryItem("Batch wall time", duration(report.wall_seconds)),
             summaryItem(
-              "Сумма времени агентов",
+              "Sum of run times",
               duration(sum(runs.map(run => run.duration_seconds))),
             ),
-            summaryItem("Всего токенов", tokens(allTokens)),
+            summaryItem("Total tokens", tokens(allTokens)),
             summaryItem(
-              "Быстрейший завершённый",
+              "Fastest completed run",
               fastest ? `${fastest.model} · ${duration(fastest.duration_seconds)}` : "—",
             ),
           )
           summary.children[1].title =
-            "Время от начала до завершения всего прогона с учётом параллельной работы."
+            "Elapsed time for the entire batch, including parallel execution."
           summary.children[2].title =
-            "Сумма длительностей отдельных запусков; при параллельной работе больше общего времени."
+            "Sum of individual run durations; exceeds wall time when runs execute in parallel."
           summary.children[3].title = known(allTokens)
-            ? `${numbers.format(allTokens)} токенов`
-            : "У одного или нескольких запусков нет статистики токенов."
+            ? `${numbers.format(allTokens)} tokens`
+            : "Token usage is unavailable for one or more runs."
         }
 
         function renderToggles() {
@@ -916,7 +916,7 @@
             input.checked = true
             input.setAttribute(
               "aria-label",
-              `Показать ${run.model}${run.effort ? `, ${run.effort}` : ""}, ${run.label || `запуск ${index + 1}`}`,
+              `Show ${run.model}${run.effort ? `, ${run.effort}` : ""}, ${run.label || `run ${index + 1}`}`,
             )
             input.addEventListener("change", () => {
               if (input.checked) hidden.delete(index)
@@ -937,14 +937,14 @@
           const status = element(
             "span",
             "status",
-            statuses[run.status] || run.status || "Статус неизвестен",
+            statuses[run.status] || run.status || "Unknown status",
           )
           status.dataset.status = run.status || "unknown"
           identity.append(
             element(
               "span",
               "run-label",
-              run.label || `Запуск ${String(index + 1).padStart(2, "0")}`,
+              run.label || `Run ${String(index + 1).padStart(2, "0")}`,
             ),
             title,
             status,
@@ -952,14 +952,14 @@
 
           const metrics = element("div", "header-metrics")
           const elapsed = element("div", "metric")
-          elapsed.title = "Время агента с учётом ожидания модели и инструментов."
+          elapsed.title = "Run time includes waiting for the model and tools."
           elapsed.append(
-            element("span", "", "Время"),
+            element("span", "", "Time"),
             element("strong", "", duration(run.duration_seconds)),
           )
           const consumed = element("div", "metric")
-          consumed.title = "Токены: вход + выход за весь запуск. Кеш уже включён во вход."
-          consumed.append(element("span", "", "Токены"), numberNode("strong", total(run), tokens))
+          consumed.title = "Tokens: input + output for the entire run. Cached tokens are already included in input."
+          consumed.append(element("span", "", "Tokens"), numberNode("strong", total(run), tokens))
           metrics.append(elapsed, consumed)
           node.append(identity, metrics)
           return node
@@ -973,16 +973,16 @@
 
         function renderMetrics(run, index, maximum) {
           const node = accent(element("section", "matrix-cell"), index)
-          node.setAttribute("aria-label", `Метрики ${run.model}`)
+          node.setAttribute("aria-label", `Metrics for ${run.model}`)
           const usage = run.tokens || {}
           const stats = element("div", "token-stats")
           const statsHeader = element("div", "token-stats-header")
           const cacheShare =
             known(usage.cached_input) && known(usage.input) && usage.input > 0
-              ? `${Math.round((usage.cached_input / usage.input) * 100)}% входа из кеша`
-              : "Доля кеша: —"
+              ? `${Math.round((usage.cached_input / usage.input) * 100)}% of input cached`
+              : "Cache share: —"
           statsHeader.append(
-            element("span", "", "Структура токенов"),
+            element("span", "", "Token breakdown"),
             element("span", "", cacheShare),
           )
           const bar = element("div", "token-bar")
@@ -991,12 +991,12 @@
             known(total(run)) && maximum > 0 ? Math.min(100, (total(run) / maximum) * 100) : 0
           fill.style.width = `${ratio}%`
           bar.append(fill)
-          bar.title = "Общий расход относительно самого большого расхода в этом отчёте."
+          bar.title = "Total usage relative to the highest usage in this report."
           const list = element("dl")
           for (const [label, value] of [
-            ["Вход всего", usage.input],
-            ["↳ из кеша", usage.cached_input],
-            ["Выход всего", usage.output],
+            ["Total input", usage.input],
+            ["↳ cached", usage.cached_input],
+            ["Total output", usage.output],
             ["↳ reasoning", usage.reasoning],
           ]) {
             const item = element("div")
@@ -1010,7 +1010,7 @@
             element(
               "small",
               "",
-              "Кеш входит во вход. Reasoning входит в выход. Это не дополнительные токены.",
+              "Cached tokens are included in input. Reasoning tokens are included in output. Neither is additional.",
             ),
           )
           node.append(stats)
@@ -1027,15 +1027,15 @@
 
         function renderAnswer(run, index) {
           const node = accent(element("section", "matrix-cell"), index)
-          node.setAttribute("aria-label", `Результат ${run.model}`)
+          node.setAttribute("aria-label", `Result for ${run.model}`)
           node.append(
             run.final_html
               ? sanitizedMarkdown(run.final_html)
-              : element("p", "empty-note", "Финальный ответ отсутствует."),
+              : element("p", "empty-note", "No final answer recorded."),
           )
           if (run.patch_html) {
             const patch = element("section", "patch")
-            patch.append(element("h3", "", "Изменения файлов"), sanitizedMarkdown(run.patch_html))
+            patch.append(element("h3", "", "File changes"), sanitizedMarkdown(run.patch_html))
             node.append(patch)
           }
           return node
@@ -1043,17 +1043,17 @@
 
         function renderTimeline(run, index) {
           const node = accent(element("section", "matrix-cell timeline-wrap"), index)
-          node.setAttribute("aria-label", `Ход работы ${run.model}`)
+          node.setAttribute("aria-label", `Work log ${run.model}`)
           const events = run.timeline || []
           node.append(
             element(
               "p",
               "timeline-note",
-              `Событий: ${numbers.format(events.length)}. Время указано от начала запуска. Комментарии, действия и доступные краткие сводки после очистки. Сырые ответы инструментов исключены.`,
+              `Events: ${numbers.format(events.length)}. Times are relative to the start of the run. Sanitized comments, actions, and available summaries. Raw tool outputs are excluded.`,
             ),
           )
           if (!events.length) {
-            node.append(element("p", "empty-note", "В этом запуске нет записанных событий."))
+            node.append(element("p", "empty-note", "No events recorded for this run."))
             return node
           }
           const list = element("ol", "timeline")
@@ -1065,7 +1065,7 @@
               known(event.at_seconds) ? `+${duration(event.at_seconds)}` : "—",
             )
             const body = element("div")
-            body.append(element("strong", "", event.title || event.kind || "Событие"))
+            body.append(element("strong", "", event.title || event.kind || "Event"))
             if (event.detail) body.append(element("pre", "", event.detail))
             item.append(time, body)
             list.append(item)
@@ -1086,7 +1086,7 @@
             track.style.setProperty("--track-width", `${Math.max(1, visible.length) * 320}px`)
           }
           document.getElementById("visible-count").textContent =
-            `Видно ${visible.length} из ${runs.length}. Скрывай модели, чтобы читать шире.`
+            `Showing ${visible.length} of ${runs.length}. Hide models for wider columns.`
           document.querySelectorAll(".model-toggle").forEach((label, index) => {
             const input = label.querySelector("input")
             input.checked = !hidden.has(index)
@@ -1094,20 +1094,20 @@
             label.dataset.visible = String(input.checked)
           })
           if (!visible.length) {
-            comparison.append(element("p", "empty-note matrix-cell", "В отчёте нет запусков."))
+            comparison.append(element("p", "empty-note matrix-cell", "No runs in this report."))
             return
           }
           for (const { run, index } of visible) headers.append(renderHeader(run, index))
-          comparison.append(sectionRow("01 · Токены", "Подробный расход каждого запуска."))
+          comparison.append(sectionRow("01 · Tokens", "Detailed token usage for each run."))
           const maximum = Math.max(0, ...runs.map(total).filter(known))
           for (const { run, index } of visible)
             comparison.append(renderMetrics(run, index, maximum))
           comparison.append(
             sectionRow(
-              mode === "result" ? "02 · Результаты" : "02 · Ход работы",
+              mode === "result" ? "02 · Results" : "02 · Work log",
               mode === "result"
-                ? "Полные ответы и изменения файлов."
-                : "События каждого агента в порядке выполнения.",
+                ? "Full answers and file changes."
+                : "Events from each agent in execution order.",
             ),
           )
           for (const { run, index } of visible)
@@ -1146,17 +1146,17 @@
           const button = event.currentTarget
           try {
             await navigator.clipboard.writeText(report.prompt || "")
-            button.textContent = "Скопировано"
+            button.textContent = "Copied"
           } catch {
             const selection = window.getSelection()
             const range = document.createRange()
             range.selectNodeContents(document.getElementById("prompt"))
             selection.removeAllRanges()
             selection.addRange(range)
-            button.textContent = "Запрос выделен: Ctrl/Cmd+C"
+            button.textContent = "Prompt selected: Ctrl/Cmd+C"
           }
           window.setTimeout(() => {
-            button.textContent = "Скопировать запрос"
+            button.textContent = "Copy prompt"
           }, 2500)
         })
 
@@ -1171,16 +1171,16 @@
           window.setTimeout(() => URL.revokeObjectURL(url), 1000)
         })
 
-        document.title = report.title || "Сравнение агентов"
+        document.title = report.title || "Agent comparison"
         document.getElementById("report-title").textContent = document.title
         const prompt = document.getElementById("prompt")
         const promptToggle = document.getElementById("toggle-prompt")
-        prompt.textContent = report.prompt || "Запрос не сохранён."
+        prompt.textContent = report.prompt || "Prompt not saved."
 
         function setPromptExpanded(expanded) {
           prompt.classList.toggle("is-expanded", expanded)
           promptToggle.setAttribute("aria-expanded", String(expanded))
-          promptToggle.textContent = expanded ? "Свернуть запрос" : "Развернуть запрос"
+          promptToggle.textContent = expanded ? "Collapse prompt" : "Expand prompt"
         }
 
         function updatePromptToggle() {
@@ -1197,7 +1197,7 @@
           const created = new Date(report.created_at)
           if (!Number.isNaN(created.getTime()))
             document.getElementById("report-date").textContent +=
-              ` Отчёт: ${created.toLocaleString("ru-RU")}.`
+              ` Report: ${created.toLocaleString("en-US")}.`
         }
         renderSummary()
         renderToggles()
