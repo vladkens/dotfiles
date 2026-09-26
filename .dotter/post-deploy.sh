@@ -1,6 +1,19 @@
 #!/bin/sh
 set -eu
 
+{{#if dotter.packages.develop}}
+export PNPM_HOME="${PNPM_HOME:-$HOME/Library/pnpm}"
+export PATH="$(brew --prefix rustup)/bin:$HOME/.local/bin:$PNPM_HOME/bin:$PATH"
+
+rustup default stable
+uv python install --default
+pnpm runtime set node lts -g
+# pnpm may copy Homebrew's relative symlink into its global bin directory.
+if [ -L "$PNPM_HOME/bin/node" ] && [ ! -e "$PNPM_HOME/bin/node" ]; then
+    ln -sf "$(command -v pnpm)" "$PNPM_HOME/bin/node"
+fi
+{{/if}}
+
 {{#if dotter.packages.pro-m2}}
 mkdir -p "${HOME}/.terraform.d/plugin-cache"
 
