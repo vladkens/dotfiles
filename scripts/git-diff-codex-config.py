@@ -3,7 +3,7 @@
 """Remove local and volatile values from Codex config comparisons in Git.
 
 Git runs this script as the ``codex-config`` clean filter configured in the
-Makefile and .gitattributes. It reads ``config.toml`` from stdin and writes a
+pre-deploy hook and .gitattributes. It reads ``config.toml`` from stdin and writes a
 stable representation to stdout, excluding:
 
 - root-level model selection settings;

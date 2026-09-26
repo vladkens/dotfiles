@@ -1,3 +1,5 @@
+command = /opt/homebrew/bin/fish
+
 font-family = JetBrains Mono
 font-style = Medium
 font-size = 13

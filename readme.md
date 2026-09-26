@@ -1,23 +1,40 @@
 # dotfiles
 
-Configuration sources are grouped by application under `dotfiles/`. Claude and Codex configuration and extensions live together under their dedicated top-level directories.
+Personal application configs and agent settings, managed with Dotter.
 
 ## Setup
 
-After cloning the repository, install Dotter and deploy the configuration:
+Install Homebrew, clone this repository, then install Dotter:
 
 ```sh
 brew install dotter
+```
+
+Create `.dotter/local.toml` (ignored by Git) to select a profile:
+
+```toml
+packages = ["air-m5"]
+```
+
+- `air-m5`: terminal apps and configs.
+- `pro-m2`: terminal plus the remaining previous configuration.
+
+Preview config changes, then install the selected groups and link their configs:
+
+```sh
+dotter deploy --dry-run
 make deploy
 ```
 
-## Repository Layout
+`make deploy` can overwrite existing target files (`--force`).
 
-- Keep application configs under `dotfiles/<app>/` and preserve their directory structure.
-- If an application mixes configuration with local state in the same directory, manage only the files and subdirectories that belong to the configuration.
-- Keep personal CLI commands under `bin/`; Dotter installs them into `~/.local/bin`.
-- Put files installed directly in `$HOME` at the root of `dotfiles/`.
-- Keep Claude and Codex configuration and extensions under `claude/` and `codex/`, and keep repository tooling in `scripts/` or the repository root.
+## Files
+
+- `.dotter/global.toml`: profiles, groups, and config destinations.
+- `.dotter/*.Brewfile`: programs to install for each group.
+- `dotfiles/`: application configs.
+- `claude/`, `codex/`: agent settings and extensions.
+- `bin/`: personal CLI tools; `scripts/`: repository utilities.
 
 ## Codex Config Notes
 

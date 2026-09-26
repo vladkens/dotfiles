@@ -1,14 +1,13 @@
 .PHONY: prepare deploy launchd macos-defaults
 
+DOTTER = dotter --pre-deploy .dotter/pre-deploy.sh --post-deploy .dotter/post-deploy.sh
+
 prepare:
 	uvx ruff format .
 	pnpm dlx prettier --write --log-level warn .
 
 deploy:
-	@git config --local filter.codex-config.clean '"$(CURDIR)/scripts/git-diff-codex-config.py"'
-	@git config --local filter.codex-config.smudge cat
-	@git config --local filter.codex-config.required true
-	dotter deploy --force --noconfirm --verbose
+	$(DOTTER) deploy --force --noconfirm --verbose
 
 launchd: # install and reload managed launchd jobs
 	./scripts/launchd-hourly-snapshot.py

@@ -12,6 +12,7 @@ fish_add_path -g /opt/homebrew/opt/mysql-client@8.4/bin
 fish_add_path -g /opt/homebrew/opt/libpq/bin
 fish_add_path -g /opt/homebrew/sbin
 fish_add_path -g /opt/homebrew/bin
+fish_add_path -g /opt/homebrew/opt/curl/bin
 
 # --- Environment ---
 set -x DO_NOT_TRACK 1
@@ -50,6 +51,7 @@ if test -f ~/.config/fish/config.local.fish
 end
 
 # --- Aliases ---
+alias cat='bat --style=plain --paging=never'
 alias ls='eza --group-directories-first'
 alias ll='eza --all --long --group-directories-first'
 alias ta='tmux new-session -A -s main'

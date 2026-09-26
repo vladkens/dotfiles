@@ -1,5 +1,6 @@
 .cache/
 .dotter/cache.toml
 .dotter/cache/
+.dotter/local.toml
 .DS_Store
 output/
