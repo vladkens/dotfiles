@@ -7,29 +7,23 @@
 // from the command palette.
 [
   {
-    "context": "Workspace",
-    "bindings": {
-      // "shift shift": "file_finder::Toggle"
-    }
-  },
-  {
-    "context": "Editor && vim_mode == insert",
-    "bindings": {
-      // "j k": "vim::NormalBefore"
-    }
-  },
-  {
     "context": "Editor",
     "bindings": {
       "cmd-d": "editor::DuplicateLineDown",
       "cmd-shift-up": "editor::AddSelectionAbove",
-      "cmd-shift-down": "editor::AddSelectionBelow"
-    }
-  },
-  {
-    "context": "Editor",
-    "unbind": {
-      "alt-shift-down": "editor::DuplicateLineDown"
+      "cmd-shift-down": "editor::AddSelectionBelow",
+      "cmd-shift-l": "editor::Format",
+      "cmd-l": "go_to_line::Toggle",
+      "cmd-=": "zed::IncreaseBufferFontSize",
+      "cmd--": "zed::DecreaseBufferFontSize",
+      "cmd-0": "zed::ResetBufferFontSize",
+      "ctrl-w": "editor::ToggleSoftWrap",
+      "cmd-/": ["workspace::SendKeystrokes", "cmd-/ down"],
+      "alt-shift-down": null,
+      "alt-shift-f": null,
+      "alt-cmd-up": null,
+      "alt-cmd-down": null,
+      "ctrl-g": null
     }
   }
 ]

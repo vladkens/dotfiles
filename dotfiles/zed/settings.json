@@ -12,17 +12,33 @@
   "disable_ai": true,
   "buffer_line_height": "standard",
   "auto_update": false,
+  "auto_install_extensions": {
+    "git-firefly": true,
+    "make": true
+  },
   "telemetry": {
     "diagnostics": false,
     "metrics": false,
     "anthropic_retention": false
   },
   "ui_font_size": 15.0,
+  "buffer_font_family": "JetBrains Mono",
   "buffer_font_size": 15,
   "theme": { "mode": "system", "light": "One Light", "dark": "One Dark" },
   "project_panel": { "dock": "left", "hide_root": true },
   "wrap_guides": [100],
-  "file_scan_exclusions": ["**/.DS_Store", "**/.git", "**/node_modules", "**/pnpm-lock.yaml"],
+  "tab_size": 2,
+  "soft_wrap": "none",
+  "languages": {
+    "Python": { "tab_size": 4 },
+    "Markdown": { "soft_wrap": "bounded", "preferred_line_length": 100 }
+  },
+  "terminal": {
+    "shell": { "program": "/opt/homebrew/bin/fish" },
+    "font_family": "JetBrains Mono",
+    "max_scroll_history_lines": 50000
+  },
+  "file_scan_exclusions": ["**/.DS_Store", "**/.git", "**/.ruff_cache", "**/node_modules", "**/pnpm-lock.yaml"],
   "git": {
     "inline_blame": { "enabled": true, "location": "status_bar" }
   },

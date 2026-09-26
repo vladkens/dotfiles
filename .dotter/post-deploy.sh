@@ -1,6 +1,13 @@
 #!/bin/sh
 set -eu
 
+{{#if dotter.packages.containers}}
+docker_plugins="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
+mkdir -p "$docker_plugins"
+ln -sfn "$(brew --prefix)/lib/docker/cli-plugins/docker-compose" "$docker_plugins/docker-compose"
+ln -sfn "$(brew --prefix)/lib/docker/cli-plugins/docker-buildx" "$docker_plugins/docker-buildx"
+{{/if}}
+
 {{#if dotter.packages.develop}}
 export PNPM_HOME="${PNPM_HOME:-$HOME/Library/pnpm}"
 export PATH="$(brew --prefix rustup)/bin:$HOME/.local/bin:$PNPM_HOME/bin:$PATH"
