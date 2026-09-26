@@ -16,8 +16,11 @@ Create `.dotter/local.toml` (ignored by Git) to select a profile:
 packages = ["air-m5"]
 ```
 
-- `air-m5`: terminal apps and configs.
-- `pro-m2`: terminal plus the remaining previous configuration.
+- `air-m5`: `terminal` and `develop`.
+- `pro-m2`: both groups plus the remaining previous configuration.
+
+`develop` installs rustup, uv, and pnpm, configures Fish paths, and installs
+Rust stable, the default stable Python supplied by uv, and Node.js LTS.
 
 Preview config changes, then install the selected groups and link their configs:
 

@@ -2,23 +2,29 @@
 default_target_type = "symbolic"
 
 [air-m5]
-depends = ["terminal"]
+depends = ["terminal", "develop"]
 
 [pro-m2]
-depends = ["terminal"]
+depends = ["terminal", "develop"]
 
 [terminal.files]
 "dotfiles/bat/config" = "~/.config/bat/config"
 "dotfiles/fish/config.fish" = "~/.config/fish/config.fish"
+"dotfiles/fish/conf.d/terminal.fish" = "~/.config/fish/conf.d/terminal.fish"
 "dotfiles/fish/functions" = { target = "~/.config/fish/functions", type = "symbolic", recurse = true }
 "dotfiles/ghostty" = { target = "~/.config/ghostty", type = "symbolic", recurse = false }
 "dotfiles/starship/starship.toml" = "~/.config/starship.toml"
 "dotfiles/git" = { target = "~/.config/git", type = "symbolic", recurse = false }
-"dotfiles/mise" = { target = "~/.config/mise", type = "symbolic", recurse = false }
 "dotfiles/tmux/tmux.conf" = "~/.config/tmux/tmux.conf"
 "dotfiles/vim" = { target = "~/.config/vim", type = "symbolic", recurse = false }
 
+[develop.files]
+"dotfiles/fish/conf.d/develop.fish" = "~/.config/fish/conf.d/develop.fish"
+
 [pro-m2.files]
+"dotfiles/fish/conf.d/pro-m2.fish" = "~/.config/fish/conf.d/pro-m2.fish"
+"dotfiles/npmrc" = "~/.npmrc"
+"dotfiles/mise" = { target = "~/.config/mise", type = "symbolic", recurse = false }
 "bin" = "~/.local/bin"
 "claude/CLAUDE.md" = "~/.claude/CLAUDE.md"
 "claude/settings.json" = "~/.claude/settings.json"
@@ -28,7 +34,6 @@ depends = ["terminal"]
 "codex/config.toml" = "~/.codex/config.toml"
 "codex/rules" = { target = "~/.codex/rules", type = "symbolic", recurse = false }
 "codex/skills" = { target = "~/.agents/skills", type = "symbolic", recurse = false }
-"dotfiles/npmrc" = "~/.npmrc"
 "dotfiles/revdiff/config" = "~/.config/revdiff/config"
 "dotfiles/sublime/Default (OSX).sublime-keymap" = "~/Library/Application Support/Sublime Text/Packages/User/Default (OSX).sublime-keymap"
 "dotfiles/sublime/Preferences.sublime-settings" = "~/Library/Application Support/Sublime Text/Packages/User/Preferences.sublime-settings"

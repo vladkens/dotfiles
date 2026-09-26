@@ -8,3 +8,7 @@ git config --local filter.codex-config.required true
 {{#if dotter.packages.terminal}}
 brew bundle install --file="{{dotter.current_dir}}/.dotter/terminal.Brewfile" --no-upgrade
 {{/if}}
+
+{{#if dotter.packages.develop}}
+brew bundle install --file="{{dotter.current_dir}}/.dotter/develop.Brewfile" --no-upgrade
+{{/if}}
