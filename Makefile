@@ -16,3 +16,4 @@ launchd: # install and reload managed launchd jobs
 
 macos-defaults: # apply managed macOS preferences
 	defaults write com.apple.CrashReporter DialogType -string server
+	defaults write -g NSMenuEnableActionImages -bool NO

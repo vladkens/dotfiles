@@ -24,6 +24,8 @@ status_line = [
 ]
 status_line_use_colors = true
 theme = "catppuccin-macchiato"
+screen_reader_detection_done = true
+pet = "disabled"
 
 [permissions.dev_workspace]
 extends = ":workspace"
