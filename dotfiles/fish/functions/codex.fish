@@ -1,30 +1,16 @@
-function codex --description 'Start Codex with a random pet'
+function codex --description 'Start Codex or resume this shell\'s last session with back'
 	set -l session_file "$TMPDIR"codex-session-$fish_pid
 	set -lx CODEX_SESSION_FILE "$session_file"
 
-	set -l pet_root "$HOME/.codex/pets"
-	if set -q CODEX_HOME; and test -n "$CODEX_HOME"
-		set pet_root "$CODEX_HOME/pets"
-	end
-
-	set -l manifests
-	for pet_dir in $pet_root/*/
-		if test -f "$pet_dir/pet.json"
-			set -a manifests "$pet_dir/pet.json"
+	if test "$argv[1]" = back
+		if not test -s "$session_file"
+			echo 'codex back: no Codex session recorded in this shell' >&2
+			return 1
 		end
+
+		read -l session_id < "$session_file"
+		set argv resume "$session_id" $argv[2..-1]
 	end
 
-	set -l pets
-	if test (count $manifests) -gt 0
-		for manifest in (jq -r 'select(.spriteVersionNumber == null or .spriteVersionNumber == 1) | input_filename' $manifests)
-			set -a pets "custom:"(path basename (path dirname "$manifest"))
-		end
-	end
-
-	if test (count $pets) -gt 0
-		set -l pet (random choice $pets)
-		command codex -c "tui.pet=\"$pet\"" $argv
-	else
-		command codex $argv
-	end
+	command codex $argv
 end

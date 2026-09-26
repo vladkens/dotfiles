@@ -134,5 +134,6 @@
   "workbench.editorAssociations": {
     "*.db": "sqlite-viewer.option"
   },
-  "workbench.startupEditor": "none"
+  "workbench.startupEditor": "none",
+  "workbench.preferredDarkColorTheme": "Dark Modern"
 }
