@@ -5,10 +5,11 @@ git config --local filter.codex-config.clean '"{{dotter.current_dir}}/scripts/gi
 git config --local filter.codex-config.smudge cat
 git config --local filter.codex-config.required true
 
-{{#if dotter.packages.terminal}}
-brew bundle install --file="{{dotter.current_dir}}/.dotter/terminal.Brewfile" --no-upgrade
+{{#each dotter.packages}}
+{{#if this}}
+brewfile="{{@root.dotter.current_dir}}/.dotter/Brewfile-{{@key}}"
+if [ -f "$brewfile" ]; then
+    brew bundle install --file="$brewfile" --no-upgrade
+fi
 {{/if}}
-
-{{#if dotter.packages.develop}}
-brew bundle install --file="{{dotter.current_dir}}/.dotter/develop.Brewfile" --no-upgrade
-{{/if}}
+{{/each}}

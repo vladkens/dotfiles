@@ -16,11 +16,18 @@ Create `.dotter/local.toml` (ignored by Git) to select a profile:
 packages = ["air-m5"]
 ```
 
-- `air-m5`: `terminal` and `develop`.
-- `pro-m2`: both groups plus the remaining previous configuration.
+Available profiles:
+
+- `air-m5`
+- `pro-m2`
+
+Profile contents are defined in `.dotter/global.toml`.
 
 `develop` installs rustup, uv, and pnpm, configures Fish paths, and installs
 Rust stable, the default stable Python supplied by uv, and Node.js LTS.
+
+`containers` installs Docker, Compose, Buildx, and Colima. Start the container
+engine with `colima start`; stop it with `colima stop`.
 
 Preview config changes, then install the selected groups and link their configs:
 
@@ -34,7 +41,7 @@ make deploy
 ## Files
 
 - `.dotter/global.toml`: profiles, groups, and config destinations.
-- `.dotter/*.Brewfile`: programs to install for each group.
+- `.dotter/Brewfile-*`: programs to install for each group.
 - `dotfiles/`: application configs.
 - `claude/`, `codex/`: agent settings and extensions.
 - `bin/`: personal CLI tools; `scripts/`: repository utilities.

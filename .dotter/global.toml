@@ -2,10 +2,10 @@
 default_target_type = "symbolic"
 
 [air-m5]
-depends = ["terminal", "develop"]
+depends = ["terminal", "develop", "zed"]
 
 [pro-m2]
-depends = ["terminal", "develop"]
+depends = ["terminal", "develop", "containers", "zed"]
 
 [terminal.files]
 "dotfiles/bat/config" = "~/.config/bat/config"
@@ -20,6 +20,13 @@ depends = ["terminal", "develop"]
 
 [develop.files]
 "dotfiles/fish/conf.d/develop.fish" = "~/.config/fish/conf.d/develop.fish"
+
+[containers.files]
+"dotfiles/fish/conf.d/containers.fish" = "~/.config/fish/conf.d/containers.fish"
+
+[zed.files]
+"dotfiles/zed/keymap.json" = "~/.config/zed/keymap.json"
+"dotfiles/zed/settings.json" = "~/.config/zed/settings.json"
 
 [pro-m2.files]
 "dotfiles/fish/conf.d/pro-m2.fish" = "~/.config/fish/conf.d/pro-m2.fish"
@@ -42,5 +49,3 @@ depends = ["terminal", "develop"]
 "dotfiles/vscode/keybindings.json" = "~/Library/Application Support/Code/User/keybindings.json"
 "dotfiles/vscode/settings.json" = "~/Library/Application Support/Code/User/settings.json"
 "dotfiles/wezterm" = { target = "~/.config/wezterm", type = "symbolic", recurse = false }
-"dotfiles/zed/keymap.json" = "~/.config/zed/keymap.json"
-"dotfiles/zed/settings.json" = "~/.config/zed/settings.json"
