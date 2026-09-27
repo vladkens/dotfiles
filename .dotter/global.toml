@@ -11,7 +11,7 @@ depends = ["terminal", "develop", "containers", "zed"]
 "dotfiles/bat/config" = "~/.config/bat/config"
 "dotfiles/fish/config.fish" = "~/.config/fish/config.fish"
 "dotfiles/fish/conf.d/terminal.fish" = "~/.config/fish/conf.d/terminal.fish"
-"dotfiles/fish/functions" = { target = "~/.config/fish/functions", type = "symbolic", recurse = true }
+"dotfiles/fish/functions" = { target = "~/.config/fish/functions", type = "symbolic", recurse = false }
 "dotfiles/ghostty" = { target = "~/.config/ghostty", type = "symbolic", recurse = false }
 "dotfiles/starship/starship.toml" = "~/.config/starship.toml"
 "dotfiles/git" = { target = "~/.config/git", type = "symbolic", recurse = false }
