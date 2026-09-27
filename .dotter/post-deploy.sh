@@ -3,8 +3,6 @@ set -eu
 
 uv run --script "{{dotter.current_dir}}/scripts/prune-dotfile-links.py"
 
-make -C "{{dotter.current_dir}}" macos-defaults
-
 {{#if dotter.packages.containers}}
 docker_plugins="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
 mkdir -p "$docker_plugins"
@@ -23,6 +21,11 @@ pnpm runtime set node lts -g
 if [ -L "$PNPM_HOME/bin/node" ] && [ ! -e "$PNPM_HOME/bin/node" ]; then
     ln -sf "$(command -v pnpm)" "$PNPM_HOME/bin/node"
 fi
+{{/if}}
+
+{{#if dotter.packages.desktop}}
+sh "{{dotter.current_dir}}/dotfiles/macos/defaults.sh"
+python3 "{{dotter.current_dir}}/scripts/launchd-key-remapping.py"
 {{/if}}
 
 {{#if dotter.packages.pro-m2}}

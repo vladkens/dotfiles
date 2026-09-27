@@ -2,10 +2,12 @@
 default_target_type = "symbolic"
 
 [air-m5]
-depends = ["terminal", "develop", "zed"]
+depends = ["terminal", "develop", "zed", "desktop"]
 
 [pro-m2]
-depends = ["terminal", "develop", "containers", "zed"]
+depends = ["terminal", "develop", "containers"]
+
+[desktop]
 
 [terminal.files]
 "dotfiles/bat/config" = "~/.config/bat/config"

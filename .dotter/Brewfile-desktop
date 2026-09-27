@@ -1,0 +1,10 @@
+cask "telegram"
+cask "shottr"
+cask "keepingyouawake"
+cask "itsycal"
+
+# Optional apps to consider later.
+# cask "lulu"
+# cask "marta"
+# cask "cleanshot"
+# cask "cap"
