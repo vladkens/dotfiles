@@ -32,15 +32,17 @@ python3 "{{dotter.current_dir}}/scripts/launchd-key-remapping.py"
 mkdir -p "${HOME}/.terraform.d/plugin-cache"
 
 uv run --script "{{dotter.current_dir}}/scripts/configure-claude-profiles.py"
+{{/if}}
 
+{{#if dotter.packages.codex}}
 # Dotter maps each source to a single target, so link the shared instructions into both agents here.
-for target in "${HOME}/.codex/AGENTS.md" "${HOME}/.claude/CLAUDE.md"; do
+for target in "${HOME}/.codex/AGENTS.md"{{#if dotter.packages.pro-m2}} "${HOME}/.claude/CLAUDE.md"{{/if}}; do
     ln -sfn "{{dotter.current_dir}}/agents/agents.md" "$target"
 done
 
 # Link each shared skill into each agent's own skills directory, leaving other skills untracked.
 skills_src="{{dotter.current_dir}}/agents/skills"
-for skills_dir in "${HOME}/.agents/skills" "${HOME}/.claude/skills"; do
+for skills_dir in "${HOME}/.agents/skills"{{#if dotter.packages.pro-m2}} "${HOME}/.claude/skills"{{/if}}; do
     # Older deploys linked the whole directory.
     if [ -L "$skills_dir" ]; then
         rm "$skills_dir"

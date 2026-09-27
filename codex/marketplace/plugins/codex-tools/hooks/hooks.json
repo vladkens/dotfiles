@@ -28,7 +28,7 @@
       {
         "hooks": [
           {
-            "command": "jq -r .session_id > \"${CODEX_SESSION_FILE:-/dev/null}\"",
+            "command": "python3 -c 'import json, sys; print(json.load(sys.stdin)[\"session_id\"])' > \"${CODEX_SESSION_FILE:-/dev/null}\"",
             "timeout": 3,
             "type": "command"
           }

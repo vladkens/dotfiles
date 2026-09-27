@@ -2,10 +2,10 @@
 default_target_type = "symbolic"
 
 [air-m5]
-depends = ["terminal", "develop", "zed", "desktop"]
+depends = ["terminal", "develop", "zed", "desktop", "codex"]
 
 [pro-m2]
-depends = ["terminal", "develop", "containers"]
+depends = ["terminal", "develop", "containers", "codex"]
 
 [desktop]
 
@@ -30,6 +30,10 @@ depends = ["terminal", "develop", "containers"]
 "dotfiles/zed/keymap.json" = "~/.config/zed/keymap.json"
 "dotfiles/zed/settings.json" = "~/.config/zed/settings.json"
 
+[codex.files]
+"codex/config.toml" = "~/.codex/config.toml"
+"codex/rules" = { target = "~/.codex/rules", type = "symbolic", recurse = false }
+
 [pro-m2.files]
 "dotfiles/fish/conf.d/pro-m2.fish" = "~/.config/fish/conf.d/pro-m2.fish"
 "dotfiles/npmrc" = "~/.npmrc"
@@ -38,8 +42,6 @@ depends = ["terminal", "develop", "containers"]
 "claude/settings.json" = "~/.claude/settings.json"
 "claude/statusline.sh" = "~/.claude/statusline.sh"
 "claude/account-switch" = { target = "~/.claude/account-switch", type = "symbolic", recurse = false }
-"codex/config.toml" = "~/.codex/config.toml"
-"codex/rules" = { target = "~/.codex/rules", type = "symbolic", recurse = false }
 "dotfiles/revdiff/config" = "~/.config/revdiff/config"
 "dotfiles/sublime/Default (OSX).sublime-keymap" = "~/Library/Application Support/Sublime Text/Packages/User/Default (OSX).sublime-keymap"
 "dotfiles/sublime/Preferences.sublime-settings" = "~/Library/Application Support/Sublime Text/Packages/User/Preferences.sublime-settings"
