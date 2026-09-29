@@ -12,5 +12,5 @@ function codex --description 'Start Codex or resume this shell\'s last session w
 		set argv resume "$session_id" $argv[2..-1]
 	end
 
-	command codex $argv
+	command codex --no-daemon $argv
 end

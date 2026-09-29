@@ -26,6 +26,7 @@ status_line_use_colors = true
 theme = "catppuccin-macchiato"
 screen_reader_detection_done = true
 pet = "disabled"
+fullscreen_transcript = false
 
 [permissions.dev_workspace]
 extends = ":workspace"
@@ -82,6 +83,7 @@ enabled = false
 enabled = true
 
 [features]
+daemon_auto_start = false
 js_repl = false
 memories = false
 # network_proxy = true
