@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-description: Explore open-ended product or technical decisions and their trade-offs. Use when the user asks to brainstorm before planning or implementation, not for a bounded review of existing content.
+description: Explore open-ended product or technical decisions and their trade-offs. Use when the user asks to explore or choose a direction before planning or implementation, not for a bounded review of existing content.
 ---
 
 # Brainstorm
@@ -45,15 +45,24 @@ After the approach is selected, present the design incrementally.
 4. Pause for confirmation only when the answer could materially change the design.
 5. Backtrack when new information invalidates an assumption.
 
-### Phase 4: Next Steps
+### Phase 4: Continue or Save
 
-Keep discussing until the user asks for a next step.
+Continue the conversation without creating files unless the user explicitly asks to save the findings or write a plan.
 
-- To save the current findings, create `docs/research/yyyymmdd-<task-name>.md` using `references/research-template.md`. Create the directory if needed.
-- To prepare implementation, invoke `$planning` and carry over the relevant context, decisions, and research file path.
-- Otherwise continue the conversation or stop without creating files.
+- When asked to save the findings, use the requested path or `docs/research/yyyymmdd-<task-name>.md` by default. Create the directory if needed. Give the note a descriptive title and use the sections below, omitting empty ones.
+- When asked for an implementation plan, continue in this conversation with the planning skill.
+- When asked to implement, continue in this conversation under the normal project and Git permission rules.
 
-Do not start implementation from this skill.
+Structure a saved research note with these `##` headings:
+
+- `Goal`: what is being explored and why.
+- `Context`: relevant files, components, constraints, and existing behavior.
+- `Findings`: verified facts and meaningful alternatives with trade-offs.
+- `Decisions`: decisions made and their rationale.
+- `Open Questions`: unresolved questions or risks.
+- `Recommendation`: the preferred direction and why.
+
+Do not start implementation merely because the discussion reaches a recommendation.
 
 ## Response Style
 
@@ -69,7 +78,3 @@ Keep responses practical and conversational. Lead with known facts, state the re
 - If a question blocks progress, ask it before presenting a full proposal.
 - Accept user corrections instead of defending invalid assumptions.
 - Surface assumptions and risks explicitly.
-
-## Reference
-
-Read `references/research-template.md` when saving research.
