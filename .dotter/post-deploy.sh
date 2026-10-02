@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+make -C "{{dotter.current_dir}}" macos-defaults
+
 {{#if dotter.packages.containers}}
 docker_plugins="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
 mkdir -p "$docker_plugins"

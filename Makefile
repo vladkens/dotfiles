@@ -14,3 +14,7 @@ launchd: # install and reload managed launchd jobs
 macos-defaults: # apply managed macOS preferences
 	defaults write com.apple.CrashReporter DialogType -string server
 	defaults write -g NSMenuEnableActionImages -bool NO
+	launchctl enable "gui/$$(id -u)/com.apple.rcd"
+	@if ! launchctl print "gui/$$(id -u)/com.apple.rcd" >/dev/null 2>&1; then \
+		launchctl bootstrap "gui/$$(id -u)" /System/Library/LaunchAgents/com.apple.rcd.plist; \
+	fi
