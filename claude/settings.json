@@ -19,10 +19,9 @@
       "WebFetch(domain:api.github.com)",
       "WebFetch(domain:pnpm.io)"
     ],
-    "deny": ["Read(./.env)", "Read(./.env.*)", "Read(./secrets/**)", "Read(./configs/**)"],
-    "defaultMode": "default"
+    "deny": [],
+    "defaultMode": "auto"
   },
-  "model": "sonnet",
   "hooks": {
     "PreToolUse": [
       {
@@ -44,11 +43,16 @@
   },
   "enabledPlugins": {
     "brainstorm@umputun-cc-thingz": true,
-    "planning@umputun-cc-thingz": true
+    "clangd-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {},
   "spinnerTipsEnabled": false,
   "effortLevel": "xhigh",
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "effortLevel": "xhigh"
+    }
+  },
   "autoUpdatesChannel": "stable",
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
