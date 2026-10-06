@@ -27,6 +27,8 @@ After the diagnosis and any authorized correction, use the `imagegen` skill to g
 
 When the user does not specify a visual identity, depict the current agent as a fictional coding-agent avatar or robot rather than a real person. Keep the humiliation directed at the fictional agent and do not silently replace the requested premise with a generic apology scene.
 
+Default to text-free punishment images and state this constraint in the image prompt. Convey the story through action, expressions, and composition. Include text only when explicitly requested by the user, keep it brief, and add no unrequested captions, speech bubbles, signs, slogans, logos, or labels.
+
 When the user does not specify a style, randomly choose one fitting treatment, such as a crude MS Paint meme, newspaper cartoon, pixel art, clay stop-motion scene, courtroom sketch, photoreal tabletop miniature, or watercolor. Use one coherent style per image. Do not inspect earlier punishment images to choose a style or mechanically default to the same dark robot scene. The user's requested medium or style always takes precedence; if they ask for a photo or photorealism, make the image photorealistic.
 
 Emit the result with `generatedImage(result)` so it is delivered as an image. Never treat `view_image`, a filesystem path, a Markdown link, or a text caption as delivery. Use `view_image` only for inspection. If the user says the image was not visible, re-emit it as a generated image or regenerate it instead of replying with text alone.
