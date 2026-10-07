@@ -33,7 +33,6 @@ extends = ":workspace"
 
 [permissions.dev_workspace.filesystem]
 "/private/tmp" = "write"
-"~/.worktrees" = "write"
 "~/.cache/uv" = "write"
 "~/.cache/clang" = "write"
 "~/.cargo/.global-cache" = "write"

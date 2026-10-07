@@ -2,7 +2,8 @@
 
 - Change the Git index or create commits only with the user's explicit authorization for the current task; editing files alone grants neither.
 - Inspect or report existing Git state only when asked; treat it as user-managed.
-- Create linked worktrees only at `~/.worktrees/<repository>--<name>`.
+- Create linked worktrees only at `<project-root>/.worktrees/<name>`, using the main checkout as the project root even when working from a linked worktree.
+- Reuse the project's package manager and shared package caches for worktree dependencies; keep `node_modules`, `.venv`, and build outputs worktree-local instead of copying or symlinking them across checkouts.
 
 ## Project fit
 
