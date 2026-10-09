@@ -1,15 +1,16 @@
 ---
-name: html-share
-description: Share a local static HTML page or prebuilt frontend through a public URL. Use when the user asks to share, publish, or host a page without a backend or Git-based deployment, not when they ask only how static hosting works.
+name: share
+description: Share local HTML pages, Markdown documents, or prebuilt static sites through a public URL. Use when the user asks to share, publish, or host a local page or document without a backend or Git-based deployment, not when they ask only how static hosting works.
 ---
 
-# HTML Share
+# Share
 
 Publish prebuilt static content through a simple hosting CLI while keeping source files, credentials, and production state safe.
 
 ## Scope
 
-- Accept either one HTML file or a directory whose root contains `index.html`.
+- Accept one HTML (`.html`, `.htm`) or Markdown (`.md`, `.markdown`) file, or a directory whose root contains `index.html`.
+- Render Markdown as a readable HTML page with headings, lists, tables, links, and code blocks. Preserve existing HTML and static-site assets. Inspect relative asset references before publishing; a single-file input does not include adjacent files automatically.
 - For a source project, run its existing build first and publish only the documented static output directory.
 - Honor a hosting provider named by the user. Otherwise use a manual Netlify CLI deploy as the default simple target.
 - Do not connect Git, add serverless functions, configure continuous deployment, or change domains unless the user asks.
@@ -18,7 +19,7 @@ Publish prebuilt static content through a simple hosting CLI while keeping sourc
 
 1. Resolve the exact source path and whether the user wants a temporary preview URL or the production site URL.
 2. Inspect the source for secrets, private files, local filesystem links, and unexpected files. Never upload a repository root merely because it contains an HTML file.
-3. Create a temporary staging directory with `mktemp -d`, then run `uv run --script scripts/prepare-static-site.py <source> <staging/site>`. The script converts a single HTML file to `index.html`, rejects common credential files and symlinks, and refuses obvious local-only URLs.
+3. Create a temporary staging directory with `mktemp -d`, then run `uv run --script <skill-dir>/scripts/prepare-share.py <source> <staging/site>`, resolving the script path relative to this skill. It renders Markdown or copies HTML to `index.html`, preserves a supplied static-site directory, rejects common credential files and symlinks, and refuses obvious local-only URLs.
 4. Review the staged file list and size before any network mutation. Do not include `.git`, `.env*`, credentials, raw logs, or unrequested source files.
 
 ## Default Netlify target

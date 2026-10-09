@@ -9,11 +9,15 @@ Generate a commit message for staged changes, calibrated to the project's own co
 
 ## Step 1: Gather context
 
+Use the caller-authorized staged scope. For the full index, run:
+
 ```bash
 <skill-dir>/scripts/collect-context.py
 ```
 
 The script returns the staged stat, bounded per-file patch excerpts, and recent commit subjects in one response.
+
+When the caller authorizes only a subset of staged work, collect only that scope using the path form below. If unrelated staged work is present, return the scoped message to the caller to handle the commit; do not run an unrestricted commit or change the index to isolate work yourself. If authorized and unrelated hunks cannot be distinguished, report the blocker before generating a message.
 
 If it prints `NO_STAGED_CHANGES`, stop and say so briefly in the language of the current conversation.
 
@@ -70,7 +74,11 @@ If the changes span multiple concerns, pick the dominant one for the subject. Do
 
 Always respond with a plain text message. Do not use Codex interactive `request_user_input` menus for this skill, even when they are available.
 
-Show the generated commit message first, then always end the response with numbered options. The user must be able to reply with a number.
+When called only to generate a message during autonomous or plan execution, or when the policy defers the commit, return the message to the caller without committing or showing a confirmation menu.
+
+If a commit is due and already authorized by the current request or autonomous/plan execution policy, and the staged scope above can be safely committed, use the generated message to commit without another confirmation. Report the commit identifier and message to the caller; during autonomous execution, return control to the task instead of ending the run with options.
+
+Otherwise show the generated commit message first, then end the response with numbered options. The user must be able to reply with a number.
 
 Use this format:
 
@@ -82,7 +90,7 @@ Options:
 2. Regenerate another message.
 ```
 
-Wait for an explicit answer before committing.
+Without existing commit authorization, wait for an explicit answer before committing. A request only to suggest or regenerate a message does not authorize a commit.
 
 Based on the answer:
 
@@ -93,6 +101,7 @@ Based on the answer:
 
 - **Never commit if nothing is staged.** Always base the message on `git diff --cached`, not `git status` or working tree.
 - Do not stage or unstage files.
+- Keep the generated message and commit within the caller-authorized staged scope; preserve and exclude unrelated staged work, including during autonomous or plan execution.
 - Never amend unless the user explicitly asks.
 - Do not add `Co-authored-by` or other trailers unless the user asks.
 - If the user provides a hint, incorporate it but still derive type and scope from the actual diff.

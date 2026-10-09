@@ -13,11 +13,11 @@ The CLI requires `uv` and an existing login in Discord.app on macOS. It reads th
 
 Prefix each command below with `uv run --script <skill-dir>/scripts/ds-messages.py`. Use `--help` on the CLI or a subcommand to check syntax.
 
-| Task | Command |
-| --- | --- |
-| Check authorization when troubleshooting | `auth` |
-| Read recent channel or thread messages | `get 'https://discord.com/channels/SERVER/CHANNEL' --limit 100` |
-| Read a supplied direct or group conversation | `get 'https://discord.com/channels/@me/CHANNEL' --limit 100` |
+| Task                                         | Command                                                         |
+| -------------------------------------------- | --------------------------------------------------------------- |
+| Check authorization when troubleshooting     | `auth`                                                          |
+| Read recent channel or thread messages       | `get 'https://discord.com/channels/SERVER/CHANNEL' --limit 100` |
+| Read a supplied direct or group conversation | `get 'https://discord.com/channels/@me/CHANNEL' --limit 100`    |
 
 Use numeric server and channel IDs from a Discord link. For a thread, use its own channel link. Quote URLs as shell arguments.
 

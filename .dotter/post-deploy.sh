@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+uv run --script "{{dotter.current_dir}}/scripts/prune-dotfile-links.py"
+
 make -C "{{dotter.current_dir}}" macos-defaults
 
 {{#if dotter.packages.containers}}

@@ -13,16 +13,16 @@ The CLI requires `uv` and an existing login in the native Telegram for macOS app
 
 Prefix each command below with `uv run --script <skill-dir>/scripts/tg-cli.py`. Prefer `--json` for structured output; use `--help` on the CLI or a subcommand to check syntax.
 
-| Task | Command |
-| --- | --- |
-| Check authorization when troubleshooting | `auth status --json` |
-| List subscribed public and private channels, including archived ones | `channel list --json` |
-| Read a channel's description and metadata | `channel view '@channel' --json` |
-| Read subscription posts from the last 24 hours | `feed --json` |
-| Read recent channel posts | `message list '@channel' --limit 50 --json` |
-| Search posts within one channel | `message search '@channel' 'search terms' --json` |
-| Read a specific post | `message view 'https://t.me/channel/123' --json` |
-| Read comments attached to a post | `comment list 'https://t.me/channel/123' --json` |
+| Task                                                                 | Command                                           |
+| -------------------------------------------------------------------- | ------------------------------------------------- |
+| Check authorization when troubleshooting                             | `auth status --json`                              |
+| List subscribed public and private channels, including archived ones | `channel list --json`                             |
+| Read a channel's description and metadata                            | `channel view '@channel' --json`                  |
+| Read subscription posts from the last 24 hours                       | `feed --json`                                     |
+| Read recent channel posts                                            | `message list '@channel' --limit 50 --json`       |
+| Search posts within one channel                                      | `message search '@channel' 'search terms' --json` |
+| Read a specific post                                                 | `message view 'https://t.me/channel/123' --json`  |
+| Read comments attached to a post                                     | `comment list 'https://t.me/channel/123' --json`  |
 
 Targets accept `@username`, a channel's `-100…` ID from `channel list`, or a plain `t.me` channel link. Private channels accept their subscribed channel ID or a `https://t.me/c/…` link. Public channels can be addressed by username without subscribing. Quote targets and search strings as shell arguments.
 
