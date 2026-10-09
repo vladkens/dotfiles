@@ -22,6 +22,7 @@
     "deny": [],
     "defaultMode": "auto"
   },
+  "model": "opus",
   "hooks": {
     "PreToolUse": [
       {
@@ -29,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -c '(.tool_input.command // \"\") as $command | (.cwd // \"\") as $cwd | (try ($command | capture(\"^[[:space:]]*git[[:space:]]+-C[[:space:]]+(?<path>[^[:space:]]+)\")) catch {}) | select((.path // \"\") as $path | $path == \".\" or $path == \"./\" or ($path | rtrimstr(\"/\")) == ($cwd | rtrimstr(\"/\"))) | {hookSpecificOutput:{hookEventName:\"PreToolUse\",permissionDecision:\"deny\",permissionDecisionReason:\"git -C points to the current directory; run plain git so the permission allow-list can match\"}}'",
+            "command": "jq -c '.tool_input as $input | (.cwd // \"\") as $cwd | \"^[ \\t]*git[ \\t]+-C[ \\t]+(?<path>[^[:space:]]+)\" as $pattern | (try ($input.command | capture($pattern)) catch {}) | select((.path // \"\") as $path | $path == \".\" or $path == \"./\" or ($path | rtrimstr(\"/\")) == ($cwd | rtrimstr(\"/\"))) | {hookSpecificOutput:{hookEventName:\"PreToolUse\",updatedInput:($input | .command |= sub($pattern; \"git\"))}}'",
             "if": "Bash(git -C *)"
           }
         ]
@@ -43,14 +44,15 @@
   },
   "enabledPlugins": {
     "brainstorm@umputun-cc-thingz": true,
-    "clangd-lsp@claude-plugins-official": true
+    "clangd-lsp@claude-plugins-official": true,
+    "swift-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {},
   "spinnerTipsEnabled": false,
   "effortLevel": "xhigh",
   "modelSettings": {
     "claude-opus-5-5": {
-      "effortLevel": "xhigh"
+      "effortLevel": "high"
     }
   },
   "autoUpdatesChannel": "stable",
