@@ -1,0 +1,13 @@
+#!/bin/sh
+# Usage: yt-video URL [NAME]
+#
+# Downloads a YouTube video with the best available video and audio and prints the file's
+# path. NAME sets the file name without the extension; the default is the video id.
+# Chrome's cookies get past YouTube's sign-in check.
+set -eu
+[ $# -ge 1 ] || { echo "usage: yt-video URL [NAME]" >&2; exit 2; }
+
+path=$(yt-dlp --quiet --no-warnings --cookies-from-browser chrome --no-playlist \
+  -f 'bestvideo+bestaudio/best' \
+  -o "${2:-%(id)s}.%(ext)s" --print after_move:filepath "$1")
+echo "${path#"$PWD"/}"

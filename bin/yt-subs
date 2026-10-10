@@ -1,0 +1,7 @@
+#!/bin/sh
+# Usage: yt-subs URL... [--language CODE] [--summary-language CODE] [--output-dir DIR]
+#
+# Downloads subtitles as cached, readable transcripts. Run with --help for all options.
+set -eu
+script_dir=$(dirname -- "$(realpath "$0")")
+exec uv run --script "$script_dir/../agents/skills/yt-transcript/scripts/dl-subs.py" "$@"

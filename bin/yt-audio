@@ -1,0 +1,12 @@
+#!/bin/sh
+# Usage: yt-audio URL [NAME]
+#
+# Downloads the audio of a YouTube video as m4a (AAC, as YouTube serves it: no re-encoding) and
+# prints the file's path. NAME sets the file name without the extension; the default is the
+# video id. Chrome's cookies get past YouTube's sign-in check.
+set -eu
+[ $# -ge 1 ] || { echo "usage: yt-audio URL [NAME]" >&2; exit 2; }
+path=$(yt-dlp --quiet --no-warnings --cookies-from-browser chrome \
+  -f 'bestaudio[ext=m4a]/bestaudio' -x --audio-format m4a \
+  -o "${2:-%(id)s}.%(ext)s" --print after_move:filepath "$1")
+echo "${path#"$PWD"/}"
