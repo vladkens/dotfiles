@@ -43,7 +43,6 @@
     "padding": 0
   },
   "enabledPlugins": {
-    "brainstorm@umputun-cc-thingz": true,
     "clangd-lsp@claude-plugins-official": true,
     "swift-lsp@claude-plugins-official": true
   },

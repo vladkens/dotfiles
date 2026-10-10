@@ -35,12 +35,10 @@ depends = ["terminal", "develop", "containers", "zed"]
 "bin" = "~/.local/bin"
 "claude/CLAUDE.md" = "~/.claude/CLAUDE.md"
 "claude/settings.json" = "~/.claude/settings.json"
-"claude/skills" = "~/.claude/skills"
 "claude/statusline.sh" = "~/.claude/statusline.sh"
 "codex/AGENTS.md" = "~/.codex/AGENTS.md"
 "codex/config.toml" = "~/.codex/config.toml"
 "codex/rules" = { target = "~/.codex/rules", type = "symbolic", recurse = false }
-"codex/skills" = { target = "~/.agents/skills", type = "symbolic", recurse = false }
 "dotfiles/revdiff/config" = "~/.config/revdiff/config"
 "dotfiles/sublime/Default (OSX).sublime-keymap" = "~/Library/Application Support/Sublime Text/Packages/User/Default (OSX).sublime-keymap"
 "dotfiles/sublime/Preferences.sublime-settings" = "~/Library/Application Support/Sublime Text/Packages/User/Preferences.sublime-settings"

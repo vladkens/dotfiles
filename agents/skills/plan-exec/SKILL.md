@@ -11,7 +11,7 @@ Act as the manager: delegate implementation and fixes, inspect evidence, and kee
 
 - Use the native collaboration/subagent tools available in this session, inheriting the current model and effort unless the user specifies otherwise. If delegation is unavailable, report the blocker. A fresh context shares the filesystem, so allow only one writer and no review concurrent with implementation/fixes.
 - Keep every child in the exact absolute project directory under applicable instructions and permissions. Preserve unrelated edits and staged work; record run-owned paths/changes and a review baseline before the first task commit. Use the current checkout unless isolation was requested; follow project worktree rules when it was.
-- A user's request to execute the plan, including an explicit `$plan-exec` invocation, authorizes staging and committing verified run-owned changes after each task and review fix. Follow explicit user or approved-plan commit instructions; a newer user clarification supersedes an older restriction. Do not import the interactive no-commit default. Broader Git operations and publishing need separate authorization.
+- A user's request to execute the plan, including an explicit plan-exec skill invocation, authorizes staging and committing verified run-owned changes after each task and review fix. Follow explicit user or approved-plan commit instructions; a newer user clarification supersedes an older restriction. Do not import the interactive no-commit default. Broader Git operations and publishing need separate authorization.
 
 ## Prepare and Resume
 

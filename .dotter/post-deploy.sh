@@ -28,6 +28,24 @@ fi
 {{#if dotter.packages.pro-m2}}
 mkdir -p "${HOME}/.terraform.d/plugin-cache"
 
+# Link each shared skill into each agent's own skills directory, leaving other skills untracked.
+skills_src="{{dotter.current_dir}}/agents/skills"
+for skills_dir in "${HOME}/.agents/skills" "${HOME}/.claude/skills"; do
+    # Older deploys linked the whole directory.
+    if [ -L "$skills_dir" ]; then
+        rm "$skills_dir"
+    fi
+    mkdir -p "$skills_dir"
+    for link in "$skills_dir"/*; do
+        case "$(readlink "$link" || true)" in
+            "$skills_src"/*) [ -e "$link" ] || rm "$link" ;;
+        esac
+    done
+    for skill in "$skills_src"/*/; do
+        ln -sfn "${skill%/}" "$skills_dir/$(basename "$skill")"
+    done
+done
+
 codex plugin marketplace add "{{dotter.current_dir}}/codex/marketplace"
 codex plugin add codex-tools@dotfiles
 {{/if}}
