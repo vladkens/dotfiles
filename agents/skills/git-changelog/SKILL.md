@@ -77,7 +77,7 @@ The script also outputs an `UNRELEASED` block for commits after the latest tag (
 
 > **IMPORTANT: The script output already contains all contributor usernames. Do NOT make any additional `gh api` or `git` calls to look up PR authors or committer info. Use only what the script printed.**
 
-Use the script output to generate entries for all missing versions. If the username field is non-empty, append `(by @username)` to the relevant changelog item.
+Use the script output to generate entries for all missing versions. Append `(by @username)` only when the username field is non-empty and differs from the repository owner in `REPO=owner/repo` (case-insensitive). Omit attribution for the repository owner. Compare the resolved author username, not the person who merged the PR: an external author still gets credit when the owner merges their work. Use the remote-derived owner, not a hardcoded username or the locally authenticated account; if the owner is unknown, retain non-empty attribution.
 
 ### Step 4: Write the entry
 
