@@ -71,9 +71,11 @@ Keep responses practical and conversational. Lead with known facts, state the re
 ## Rules
 
 - One question at a time.
+- Prefer multiple-choice questions when the options are known.
 - Inspect context before proposing architecture.
 - YAGNI ruthlessly: deliver the smallest complete solution to the user's request; do not invent MVPs, phases, or deferred follow-up work unless the user asks for staged delivery.
 - Prefer project conventions and existing extension points when they exist.
+- When code would repeat, ask whether to keep duplication or add an abstraction, with the trade-off.
 - Explore alternatives only when alternatives are real.
 - If a question blocks progress, ask it before presenting a full proposal.
 - Accept user corrections instead of defending invalid assumptions.
