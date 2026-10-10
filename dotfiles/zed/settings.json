@@ -9,6 +9,7 @@
 {
   "cli_default_open_behavior": "new_window",
   "use_system_window_tabs": true,
+  "tabs": { "close_position": "left" },
   "disable_ai": true,
   "buffer_line_height": "standard",
   "auto_update": false,
@@ -25,7 +26,12 @@
   "buffer_font_family": "JetBrains Mono",
   "buffer_font_size": 15,
   "theme": { "mode": "system", "light": "One Light", "dark": "One Dark" },
-  "project_panel": { "dock": "left", "hide_root": true },
+  "project_panel": {
+    "dock": "left",
+    "hide_root": true,
+    "folder_indicator": "chevron",
+    "default_width": 300
+  },
   "wrap_guides": [100],
   "tab_size": 2,
   "soft_wrap": "none",
