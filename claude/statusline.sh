@@ -4,12 +4,23 @@ set -euo pipefail
 input="$(cat)"
 get() { jq -r "$1" <<<"$input"; }
 
-fmt_tokens() {
-  awk -v n="$1" 'BEGIN {
-    if      (n >= 1000000) printf "%.1fM", n / 1000000
-    else if (n >= 1000)    printf "%.0fK", n / 1000
-    else                   printf "%d",    n
-  }'
+rate_limit() {
+  local key="$1" label="$2" format="$3" remaining reset timestamp
+  remaining="$(get ".rate_limits.$key.used_percentage | numbers | 100 - . | round")"
+  if [[ -z "$remaining" ]]; then
+    return
+  fi
+
+  printf ' · %s %s%%' "$label" "$remaining"
+  timestamp="$(get ".rate_limits.$key.resets_at | numbers | select(. > 0) | floor")"
+  if [[ -z "$timestamp" ]]; then
+    return
+  fi
+
+  reset="$(date -r "$timestamp" "+$format" 2>/dev/null || date -d "@$timestamp" "+$format" 2>/dev/null || true)"
+  if [[ -n "$reset" ]]; then
+    printf ' ↻ %s' "$reset"
+  fi
 }
 
 model="$(get '.model.display_name')"
@@ -17,12 +28,7 @@ dir="$(get '.workspace.current_dir')"
 dir="${dir/#"$HOME"/\~}"
 
 context_remaining="$(get '(.context_window.remaining_percentage // 100)')% left"
-five_hour="$(get '(100 - .rate_limits.five_hour.used_percentage) | round')%"
-weekly="$(get '(100 - .rate_limits.seven_day.used_percentage) | round')%"
-window="$(fmt_tokens "$(get '.context_window.context_window_size')")"
-used="$(fmt_tokens "$(get '.context_window.context_window_size * .context_window.used_percentage / 100')")"
-
-# printf '%s · %s · Context %s · 5h %s · weekly %s · %s window · %s used\n' \
-  # "$model" "$dir" "$context_remaining" "$five_hour" "$weekly" "$window" "$used"
-
-printf '%s · %s · Context %s · 5h %s · weekly %s\n' "$model" "$dir" "$context_remaining" "$five_hour" "$weekly"
+printf '%s · %s · %s' "$model" "$dir" "$context_remaining"
+rate_limit five_hour 5h '%H:%M'
+rate_limit seven_day 7d '%d.%m %H:%M'
+printf '\n'

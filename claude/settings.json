@@ -59,5 +59,6 @@
   "skipDangerousModePermissionPrompt": true,
   "theme": "auto",
   "editorMode": "normal",
-  "remoteControlAtStartup": false
+  "remoteControlAtStartup": false,
+  "tui": "fullscreen"
 }

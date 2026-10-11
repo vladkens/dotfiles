@@ -4,7 +4,7 @@
 [init]
 	defaultBranch = main
 [push]
-	default = upstream
+	default = simple
 [core]
 	pager = less -+X -R
 [alias]

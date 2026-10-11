@@ -1,0 +1,307 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = []
+# ///
+
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from contextlib import contextmanager
+from pathlib import Path
+
+
+@contextmanager
+def status(message: str):
+    interactive = sys.stderr.isatty()
+
+    def update(text: str):
+        if interactive:
+            print(f"\r\033[2K{text}", end="", file=sys.stderr, flush=True)
+
+    try:
+        update(message)
+        yield update
+    finally:
+        if interactive:
+            print("\r\033[2K", end="", file=sys.stderr, flush=True)
+
+
+def build_progress(line: str) -> str | None:
+    match = re.search(r"\bBuilding\s+\[[^\]]*\]\s+(\d+)/(\d+)(?=[:\s]|$)", line)
+    if match:
+        done, total = map(int, match.groups())
+        if 0 <= done <= total and total > 0:
+            return f"Building… {done}/{total}"
+
+    return None
+
+
+def build(command: list[str]) -> None:
+    env = dict(os.environ)
+    env.update(
+        CARGO_TERM_PROGRESS_WHEN="always" if sys.stderr.isatty() else "never",
+        CARGO_TERM_PROGRESS_WIDTH="80",
+        CARGO_TERM_COLOR="never",
+    )
+    with tempfile.TemporaryFile(mode="w+t") as log:
+        with status("Building…") as update:
+            with subprocess.Popen(
+                command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, errors="replace", env=env,
+            ) as process:
+                for line in process.stdout:
+                    log.write(line)
+                    try:
+                        progress = build_progress(line)
+                    except Exception:
+                        # Progress is optional; a new Cargo format must not break the build.
+                        progress = "Building…"
+
+                    if progress:
+                        update(progress)
+
+        if process.returncode:
+            log.seek(0)
+            raise subprocess.CalledProcessError(process.returncode, command, stderr=log.read())
+
+
+def parse_args() -> tuple[argparse.Namespace, list[str]]:
+    argv = sys.argv[1:]
+    if argv[:1] == ["try"]:
+        argv = argv[1:]
+
+    if argv[:1] == ["prune"]:
+        parser = argparse.ArgumentParser(
+            prog="cargo-try prune", description="Remove all cargo-try cached builds and binaries."
+        )
+        parser.set_defaults(prune=True)
+        return parser.parse_args(argv[1:]), []
+
+    program_args = []
+    if "--" in argv:
+        separator = argv.index("--")
+        program_args = argv[separator + 1 :]
+        argv = argv[:separator]
+
+    parser = argparse.ArgumentParser(
+        description="Build and cache a GitHub branch or pull request, then run its binary.",
+        epilog="Example: cargo-try owner/repo 123 -- --help. Clear all caches: cargo-try prune",
+    )
+    parser.set_defaults(prune=False)
+    parser.add_argument("repository", help="GitHub repository: owner/repo")
+    parser.add_argument("branch", help="branch name or pull request: 123 or pr-123")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument(
+        "--update", action="store_true", help="check for a newer commit (the default)"
+    )
+    action.add_argument(
+        "--remove", action="store_true", help="remove cached builds without running"
+    )
+    parser.add_argument("--bin", help="binary to run when the package installs several")
+    parser.add_argument("--package", help="package to install from a Cargo workspace")
+    args = parser.parse_args(argv)
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*", args.repository):
+        parser.error("repository must be owner/repo")
+
+    if args.remove and (args.bin or program_args):
+        parser.error("--remove cannot be combined with --bin or program arguments")
+
+    if re.fullmatch(r"[1-9][0-9]*", args.branch):
+        args.branch = f"pr-{args.branch}"
+
+    return args, program_args
+
+
+def branch_commit(url: str, branch: str) -> str:
+    pull_request = re.fullmatch(r"pr-([1-9][0-9]*)", branch)
+    ref = f"refs/pull/{pull_request[1]}/head" if pull_request else f"refs/heads/{branch}"
+    result = subprocess.run(
+        ["git", "ls-remote", "--exit-code", url, ref],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 2:
+        raise ValueError(f"{'pull request' if pull_request else 'branch'} not found: {branch}")
+
+    result.check_returncode()
+    for line in result.stdout.splitlines():
+        commit, name = line.split("\t", 1)
+        if name == ref:
+            return commit
+
+    raise ValueError(f"ref not found: {ref}")
+
+
+def prepare(args: argparse.Namespace, entry: Path) -> tuple[Path, dict]:
+    metadata_path = entry / "metadata.json"
+    metadata = json.loads(metadata_path.read_text()) if metadata_path.exists() else None
+    cached = None
+    if metadata:
+        root = entry / "builds" / metadata["build"]
+        if metadata["binaries"] and all(
+            (root / "bin" / name).is_file() for name in metadata["binaries"]
+        ):
+            cached = root
+
+    url = f"https://github.com/{args.repository}.git"
+    try:
+        with status("Checking…"):
+            commit = branch_commit(url, args.branch)
+    except (OSError, subprocess.CalledProcessError) as error:
+        if cached is None:
+            raise
+
+        print(f"cargo-try: update check failed; using cached build ({error})", file=sys.stderr)
+        return cached, metadata
+
+    if cached is not None and metadata["commit"] == commit and metadata.get("cache_version") == 2:
+        return cached, metadata
+
+    builds = entry / "builds"
+    builds.mkdir(exist_ok=True)
+    root = Path(tempfile.mkdtemp(prefix=f"{commit[:12]}-", dir=builds))
+    # Cargo can reuse a stale binary across git revisions in a shared target directory.
+    target = entry / "target" / commit
+    command = [
+        "cargo",
+        "install",
+        "--git",
+        url,
+        "--rev",
+        commit,
+        "--locked",
+        "--root",
+        str(root),
+        "--target-dir",
+        str(target),
+    ]
+    if args.package:
+        command.append(args.package)
+
+    try:
+        build(command)
+        binaries = sorted(path.name for path in (root / "bin").iterdir() if path.is_file())
+        if not binaries:
+            raise ValueError("Cargo did not install any binaries")
+
+        updated = {
+            "cache_version": 2,
+            "repository": args.repository,
+            "branch": args.branch,
+            "package": args.package,
+            "commit": commit,
+            "build": root.name,
+            "binaries": binaries,
+        }
+        temporary = entry / "metadata.json.tmp"
+        temporary.write_text(json.dumps(updated, indent=2) + "\n")
+        temporary.replace(metadata_path)
+    except BaseException:
+        shutil.rmtree(root)
+        raise
+
+    return root, updated
+
+
+def main() -> None:
+    args, program_args = parse_args()
+    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "cargo-try"
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    # Keep this lock outside the directory prune removes.
+    with (cache.parent / ".cargo-try.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX if args.prune else fcntl.LOCK_SH)
+        if args.prune:
+            print(f"Removing all cargo-try caches in {cache}", file=sys.stderr)
+            builds = files = total = 0
+            for directory, dirs, names in os.walk(cache):
+                directory = Path(directory)
+                parts = directory.relative_to(cache).parts
+                if len(parts) == 4 and parts[-1] == "builds":
+                    builds += sum(not (directory / name).is_symlink() for name in dirs)
+
+                for name in names:
+                    total += (directory / name).lstat().st_size
+                    files += 1
+
+            if cache.exists():
+                shutil.rmtree(cache)
+
+            size = float(total)
+            for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+                if size < 1024 or unit == "TiB":
+                    break
+
+                size /= 1024
+
+            print(f"Removed {builds} builds, {files} files ({size:.1f} {unit}).", file=sys.stderr)
+            return
+
+        run(args, program_args, cache)
+
+
+def run(args: argparse.Namespace, program_args: list[str], cache: Path) -> None:
+    identity = json.dumps([args.repository, args.branch, args.package])
+    key = hashlib.sha256(identity.encode()).hexdigest()[:24]
+    entry = cache / args.repository / key
+    entry.mkdir(parents=True, exist_ok=True)
+    with (entry / "lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if args.remove:
+            # Keep the lock inode so concurrent invocations still share the same lock.
+            for path in entry.iterdir():
+                if path.name == "lock":
+                    continue
+
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+
+            print(f"Removed cached builds for {args.repository} {args.branch}", file=sys.stderr)
+            return
+
+        root, metadata = prepare(args, entry)
+
+    binaries = metadata["binaries"]
+    binary = args.bin
+    if binary is None:
+        if len(binaries) != 1:
+            raise ValueError(f"choose a binary with --bin: {', '.join(binaries)}")
+
+        binary = binaries[0]
+
+    if binary not in binaries:
+        raise ValueError(f"unknown binary {binary!r}; available: {', '.join(binaries)}")
+
+    print(
+        f"Running {args.repository} {args.branch} @ {metadata['commit'][:7]}",
+        file=sys.stderr,
+        flush=True,
+    )
+    executable = root / "bin" / binary
+    os.execv(executable, [binary, *program_args])
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except subprocess.CalledProcessError as error:
+        if error.stderr:
+            print(error.stderr.rstrip(), file=sys.stderr)
+
+        print(f"cargo-try: {error.cmd[0]} failed (exit {error.returncode})", file=sys.stderr)
+        sys.exit(error.returncode)
+    except (OSError, ValueError) as error:
+        print(f"cargo-try: {error}", file=sys.stderr)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        sys.exit(130)

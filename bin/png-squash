@@ -1,0 +1,56 @@
+#!/bin/sh
+# Usage: png-squash [--lossless | --quality=MIN-MAX] PATH...
+#
+# Shrinks PNG files in place the way TinyPNG does: pngquant to an 8-bit palette, then oxipng.
+# The default quality, 0-99, matches TinyPNG on screenshots (same size within ~2%, same SSIM;
+# visually lossless). A directory means every PNG under it. A file is replaced only when the
+# result is smaller.
+#
+# --lossless runs oxipng alone: every pixel stays, files come out about twice TinyPNG's size.
+# --quality=MIN-MAX is pngquant's range, e.g. 65-90 for smaller files; a file that can't reach MIN
+# stays lossless. A palette PNG is never quantized again, so a second run loses nothing.
+# Needs: brew install pngquant oxipng
+set -eu
+
+lossy=1 quality=0-99
+case ${1:-} in
+  --lossless) lossy=; shift ;;
+  --quality=*) quality=${1#--quality=}; shift ;;
+esac
+[ $# -ge 1 ] || { echo "usage: png-squash [--lossless | --quality=MIN-MAX] PATH..." >&2; exit 2; }
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+before=0 after=0
+
+squash() {
+  out="$tmp/out.png"
+  if [ -n "$lossy" ] && ! file -b "$1" | grep -q colormap; then
+    # Exit 99: the quality range could not be met; keep the colors as they are.
+    pngquant --force --speed 1 --strip --quality="$quality" --output "$out" -- "$1" \
+      || cp "$1" "$out"
+  else
+    cp "$1" "$out"
+  fi
+  oxipng --quiet --opt max --strip safe "$out"
+  old=$(stat -f %z "$1") new=$(stat -f %z "$out")
+  before=$((before + old))
+  if [ "$new" -lt "$old" ]; then
+    cp "$out" "$1"
+    after=$((after + new))
+    printf '%8d -> %8d  %3d%%  %s\n' "$old" "$new" $((new * 100 / old)) "$1"
+  else
+    after=$((after + old))
+    printf '%8d    (kept)       %s\n' "$old" "$1"
+  fi
+}
+
+for path in "$@"; do
+  if [ -d "$path" ]; then
+    find "$path" -type f -iname '*.png' > "$tmp/list"
+    while IFS= read -r f; do squash "$f"; done < "$tmp/list"
+  else
+    squash "$path"
+  fi
+done
+[ "$before" -gt 0 ] && printf 'total: %d -> %d bytes (%d%%)\n' "$before" "$after" $((after * 100 / before))
