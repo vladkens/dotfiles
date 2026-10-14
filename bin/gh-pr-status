@@ -1,0 +1,50 @@
+#!/bin/sh
+# Usage: gh-pr-status [PR...]   (default: every open PR of the current repo)
+#
+# Whether each PR is ready to hand over: CI on the head commit, mergeability, whether Copilot has
+# reviewed the head commit yet, and every unresolved review thread. Exits 1 when any PR is not ready.
+set -eu
+
+prs=${*:-$(gh pr list --state open --json number --jq '.[].number')}
+[ -n "$prs" ] || { echo "no open PRs"; exit 0; }
+repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+owner=${repo%/*} name=${repo#*/}
+bad=0
+
+for n in $prs; do
+  out=$(gh api graphql -F owner="$owner" -F name="$name" -F n="$n" -f query='
+    query($owner: String!, $name: String!, $n: Int!) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $n) {
+          title isDraft mergeable headRefOid
+          commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+          reviews(last: 20) { nodes { author { login } commit { oid } } }
+          reviewThreads(first: 100) { nodes { isResolved path line comments(first: 1) { nodes { author { login } body } } } }
+        }
+      }
+    }' --jq '.data.repository.pullRequest | .headRefOid as $h | [
+      .title, (.isDraft | tostring), .mergeable, .headRefOid[:7],
+      (.commits.nodes[0].commit.statusCheckRollup.state // "NONE"),
+      ([.reviews.nodes[] | select(.author.login | test("copilot"; "i")) | .commit.oid] | index($h) // -1 | tostring),
+      ([.reviews.nodes[] | select(.author.login | test("copilot"; "i")) | .commit.oid] | map(.[:7]) | join(",")),
+      ([.reviewThreads.nodes[] | select(.isResolved | not)
+        | "  - \(.path):\(.line // "-") \(.comments.nodes[0].author.login): \(.comments.nodes[0].body | gsub("\n"; " ") | .[:200])"]
+        | join("\n"))
+    ] | join("\u001f")')
+  IFS=$(printf '\037') read -r title draft mergeable head ci copilot_at copilot_shas threads <<EOF
+$out
+EOF
+  # `read` keeps only the first line of the threads; fetch them again in full.
+  threads=$(printf '%s' "$out" | awk -v RS='\037' 'NR==8')
+  copilot="reviewed $head"
+  if [ "$copilot_at" = "-1" ]; then
+    copilot=$([ -n "$copilot_shas" ] && echo "NOT on $head yet (last: ${copilot_shas##*,})" || echo "no review yet")
+  fi
+  status=ready
+  { [ "$ci" = SUCCESS ] && [ "$mergeable" = MERGEABLE ] && [ "$draft" = false ] && [ -z "$threads" ] \
+    && [ "$copilot_at" != "-1" ]; } || { status="NOT READY"; bad=1; }
+  echo "#$n $title"
+  echo "  $status | head $head | ci $ci | $mergeable | draft $draft | copilot $copilot"
+  [ -z "$threads" ] || printf '%s\n' "$threads"
+done
+exit $bad

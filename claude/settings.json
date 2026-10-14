@@ -17,10 +17,22 @@
       "WebFetch(domain:gist.github.com)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:api.github.com)",
-      "WebFetch(domain:pnpm.io)"
+      "WebFetch(domain:pnpm.io)",
+      "Bash(/Users/user/Code/vm/vm:*)",
+      "Bash(~/Code/vm/vm:*)",
+      "Bash(./vm:*)",
+      "Bash(scp -F /tmp/vm-* *)",
+      "Bash(ssh -F /tmp/vm-* *)",
+      "Bash(rsync -e ssh -F /tmp/vm-* *)"
     ],
     "deny": [],
     "defaultMode": "auto"
+  },
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Driving the person's disposable UTM VMs through their VM tool (/Users/user/Code/vm/vm prepare, start, stop, exec, ssh, ssh-config, reset, status), and copying files into or out of those VMs with scp/rsync/ssh, is explicitly allowed: the person gave agents full use of these VMs, including breaking and resetting them."
+    ]
   },
   "model": "opus",
   "hooks": {
@@ -55,7 +67,7 @@
     }
   },
   "autoUpdatesChannel": "stable",
-  "autoMemoryEnabled": false,
+  "autoMemoryEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "theme": "auto",
   "editorMode": "normal",

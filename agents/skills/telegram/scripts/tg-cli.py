@@ -27,9 +27,12 @@ Its --limit applies per channel; truncated pages include next_before for use
 with `message list CHANNEL --before ID` and the same --since/--until window.
 New means published in the selected period, independent of read/unread status.
 
-Privacy boundary: only broadcast channels and comments attached to their posts
-are readable. DMs, Saved Messages, bots, standalone groups and channel inboxes
-are rejected. Commands never send messages, join chats, or mark messages read.
+Privacy boundary: only broadcast channels, comments attached to their posts and
+public groups (supergroups with a public @username) are readable. DMs, Saved
+Messages, bots, private groups and channel inboxes are rejected. `channel list`
+and `feed` cover broadcast channels only; read a public group by its username
+or t.me link with `message list/search/view`. Commands never send messages, join
+chats, or mark messages read.
 Telegram's dialog listing includes private previews; these stay in memory and
 are neither printed nor saved to disk. Authorization is kept only in memory.
 The session itself still carries the account's full Telegram permissions.
@@ -200,7 +203,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     feed.set_defaults(command="list", before=None)
 
     channels = groups.add_parser(
-        "channel", help="List or inspect broadcast channels."
+        "channel", help="List broadcast channels or inspect a channel or public group."
     ).add_subparsers(dest="command", required=True)
     channels.add_parser(
         "list",
@@ -303,10 +306,23 @@ def is_broadcast(entity: object) -> TypeGuard[types.Channel]:
     )
 
 
+def is_public_group(entity: object) -> TypeGuard[types.Channel]:
+    # A supergroup is public exactly when it has an active @username; private ones are joined
+    # only through invite links. Old-style groups (types.Chat) can never be public.
+    return (
+        isinstance(entity, types.Channel)
+        and bool(entity.megagroup or entity.gigagroup)
+        and not entity.broadcast
+        and not entity.monoforum
+        and bool(entity.username or any(u.active for u in entity.usernames or []))
+    )
+
+
 def require_broadcast(entity: object) -> types.Channel:
-    if not is_broadcast(entity):
+    if not (is_broadcast(entity) or is_public_group(entity)):
         raise CLIError(
-            "Access denied: only broadcast channels and their post comments are allowed."
+            "Access denied: only broadcast channels, their post comments and public groups"
+            " are allowed."
         )
 
     return entity
@@ -351,7 +367,7 @@ async def resolve_channel(client: TelegramClient, selector: str | int) -> types.
 
     resolved = await client(functions.contacts.ResolveUsernameRequest(selector))
     if not isinstance(resolved.peer, types.PeerChannel):
-        raise CLIError("Access denied: this username does not identify a broadcast channel.")
+        raise CLIError("Access denied: this username does not identify a channel or public group.")
 
     for channel in resolved.chats:
         if channel.id == resolved.peer.channel_id:
@@ -707,7 +723,7 @@ async def run_command(args: argparse.Namespace) -> Mapping[str, Any]:
             return {
                 "authorized": True,
                 "source": "Telegram for macOS",
-                "scope": "channels-and-post-comments",
+                "scope": "channels-post-comments-and-public-groups",
             }
 
         if args.group == "feed":

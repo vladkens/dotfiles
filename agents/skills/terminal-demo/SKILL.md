@@ -37,6 +37,7 @@ The video is the person's Ghostty window playing back an asciinema recording. Th
    ```
 
    Keep every typed command and its usual output within the recording's column count. Pipe long prose through `fold -s` and cut it with `head`.
+
 4. Record headless in a real pty, so progress bars and spinners show. Use the size the playback window will hold; 86×23 fits 966×585 pt at 18 pt. If the tool uses the GPU, keep to the project's one-GPU-job rule.
 
    ```sh

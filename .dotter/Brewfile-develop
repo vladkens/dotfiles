@@ -1,3 +1,4 @@
 brew "rustup"
+brew "sccache"
 brew "uv"
 brew "pnpm"

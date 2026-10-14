@@ -47,10 +47,16 @@ def build_progress(line: str) -> str | None:
 def build(command: list[str]) -> None:
     env = dict(os.environ)
     env.update(
+        CARGO_NET_GIT_FETCH_WITH_CLI="true",
         CARGO_TERM_PROGRESS_WHEN="always" if sys.stderr.isatty() else "never",
         CARGO_TERM_PROGRESS_WIDTH="80",
         CARGO_TERM_COLOR="never",
     )
+    if not env.get("RUSTC_WRAPPER") and (sccache := shutil.which("sccache")):
+        env["RUSTC_WRAPPER"] = sccache
+        env["CARGO_INCREMENTAL"] = "0"
+        env.setdefault("SCCACHE_IGNORE_SERVER_IO_ERROR", "1")
+
     with tempfile.TemporaryFile(mode="w+t") as log:
         with status("Building…") as update:
             with subprocess.Popen(
@@ -73,6 +79,28 @@ def build(command: list[str]) -> None:
             raise subprocess.CalledProcessError(process.returncode, command, stderr=log.read())
 
 
+def origin_repository() -> tuple[str, str]:
+    result = subprocess.run(
+        ["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=False
+    )
+    if result.returncode:
+        raise ValueError("cannot read origin; run inside a Git repository or specify owner/repo")
+
+    url = result.stdout.strip()
+    match = re.fullmatch(
+        r"(?:https?://github\.com/|git@github\.com:|ssh://(?:git@)?github\.com(?::[0-9]+)?/)"
+        r"([^/\s]+/[^/\s]+?)(?:\.git)?/?",
+        url,
+    )
+    if not match:
+        raise ValueError("origin must be a GitHub repository; otherwise specify owner/repo")
+
+    if url.startswith("git@github.com:"):
+        url = "ssh://git@github.com/" + url.removeprefix("git@github.com:")
+
+    return match[1], url
+
+
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
     argv = sys.argv[1:]
     if argv[:1] == ["try"]:
@@ -93,10 +121,10 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
 
     parser = argparse.ArgumentParser(
         description="Build and cache a GitHub branch or pull request, then run its binary.",
-        epilog="Example: cargo-try owner/repo 123 -- --help. Clear all caches: cargo-try prune",
+        epilog="Examples: cargo-try 123; cargo-try owner/repo 123 -- --help. Clear all caches: cargo-try prune",
     )
     parser.set_defaults(prune=False)
-    parser.add_argument("repository", help="GitHub repository: owner/repo")
+    parser.add_argument("repository", nargs="?", help="GitHub repository: owner/repo (default: origin)")
     parser.add_argument("branch", help="branch name or pull request: 123 or pr-123")
     action = parser.add_mutually_exclusive_group()
     action.add_argument(
@@ -108,6 +136,13 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--bin", help="binary to run when the package installs several")
     parser.add_argument("--package", help="package to install from a Cargo workspace")
     args = parser.parse_args(argv)
+    args.url = None
+    if args.repository is None:
+        try:
+            args.repository, args.url = origin_repository()
+        except ValueError as error:
+            parser.error(str(error))
+
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*", args.repository):
         parser.error("repository must be owner/repo")
 
@@ -152,7 +187,7 @@ def prepare(args: argparse.Namespace, entry: Path) -> tuple[Path, dict]:
         ):
             cached = root
 
-    url = f"https://github.com/{args.repository}.git"
+    url = args.url or f"https://github.com/{args.repository}.git"
     try:
         with status("Checking…"):
             commit = branch_commit(url, args.branch)

@@ -22,6 +22,7 @@ depends = ["terminal", "develop", "containers", "zed"]
 "dotfiles/fish/conf.d/develop.fish" = "~/.config/fish/conf.d/develop.fish"
 
 [containers.files]
+"dotfiles/colima/default.yaml" = "~/.colima/_templates/default.yaml"
 "dotfiles/fish/conf.d/containers.fish" = "~/.config/fish/conf.d/containers.fish"
 
 [zed.files]

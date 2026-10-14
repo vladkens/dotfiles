@@ -21,8 +21,9 @@ ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
 parser.add_argument("src")
 parser.add_argument("dst")
-parser.add_argument("--speed", nargs=3, action="append", default=[],
-                    metavar=("CMD", "MARKER", "SECONDS"))
+parser.add_argument(
+    "--speed", nargs=3, action="append", default=[], metavar=("CMD", "MARKER", "SECONDS")
+)
 args = parser.parse_args()
 
 lines = open(args.src, encoding="utf-8").read().splitlines()

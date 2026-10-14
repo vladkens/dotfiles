@@ -4,6 +4,11 @@
 
 When working with GitHub, always use `gh` and its direct subcommands (`gh pr`, `gh issue`, `gh repo`, `gh run`, etc.). Use `gh api` only as a last resort when the data cannot be obtained via direct commands.
 
+## Pull requests
+
+- Before telling the user a PR is ready to merge, run `gh-pr-status <N>` (all open PRs without a number). It is ready only when the script prints `ready`: CI green on the head commit, mergeable, not a draft, Copilot has reviewed the head commit, and no unresolved review threads. Copilot reviews a few minutes after each push: if it hasn't reviewed the head yet, wait for it and check again instead of reporting the PR ready.
+- Fix what Copilot is right about, answer the rest in the thread, and resolve each thread.
+
 ## Responses
 
 - Keep responses short and to the point. No unnecessary explanations, no padding. One sentence per update is usually enough.
@@ -20,3 +25,7 @@ When working with GitHub, always use `gh` and its direct subcommands (`gh pr`, `
 
 - Write single, simple commands. Do not use `cd` or chain commands with `;`, `&&`, or `||` in one invocation — chained/`cd`-prefixed commands cannot match the permission allowlist and trigger prompts.
 - Never use `git -C <path>` when `<path>` is the current working directory. Run the plain `git <subcommand>` instead — `-C` breaks the permission allowlist and triggers a prompt every time.
+
+## Private notes
+
+`~/Code/notes` is the user's private notes repo for all projects: local git, no remote, never push it anywhere. When the user asks to save something private (plans, business, ideas, anything not meant for the project repo), write it to `~/Code/notes/<project>/` (`general/` for things across projects) and commit with a short line. Never copy these notes into a project repository.
