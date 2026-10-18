@@ -30,6 +30,11 @@ mkdir -p "${HOME}/.terraform.d/plugin-cache"
 
 uv run --script "{{dotter.current_dir}}/scripts/configure-claude-profiles.py"
 
+# Dotter maps each source to a single target, so link the shared instructions into both agents here.
+for target in "${HOME}/.codex/AGENTS.md" "${HOME}/.claude/CLAUDE.md"; do
+    ln -sfn "{{dotter.current_dir}}/agents/agents.md" "$target"
+done
+
 # Link each shared skill into each agent's own skills directory, leaving other skills untracked.
 skills_src="{{dotter.current_dir}}/agents/skills"
 for skills_dir in "${HOME}/.agents/skills" "${HOME}/.claude/skills"; do

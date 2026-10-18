@@ -34,10 +34,8 @@ depends = ["terminal", "develop", "containers", "zed"]
 "dotfiles/npmrc" = "~/.npmrc"
 "dotfiles/mise" = { target = "~/.config/mise", type = "symbolic", recurse = false }
 "bin" = "~/.local/bin"
-"claude/CLAUDE.md" = "~/.claude/CLAUDE.md"
 "claude/settings.json" = "~/.claude/settings.json"
 "claude/statusline.sh" = "~/.claude/statusline.sh"
-"codex/AGENTS.md" = "~/.codex/AGENTS.md"
 "codex/config.toml" = "~/.codex/config.toml"
 "codex/rules" = { target = "~/.codex/rules", type = "symbolic", recurse = false }
 "dotfiles/revdiff/config" = "~/.config/revdiff/config"

@@ -2,7 +2,7 @@
 
 This repository is the source of truth for personal dotfiles and agent extensions installed across one or more computers. The instructions in this file apply to both Codex and Claude unless a section explicitly says otherwise.
 
-- Store ordinary application and system configuration under `dotfiles/`, grouped by application; store agent configuration and extensions under the top-level `claude/` and `codex/` directories, and skills shared by both agents under `agents/skills/`.
+- Store ordinary application and system configuration under `dotfiles/`, grouped by application; store agent configuration and extensions under the top-level `claude/` and `codex/` directories, and global instructions and skills shared by both agents under `agents/agents.md` and `agents/skills/`.
 - Treat changes under `agents/`, `claude/`, and `codex/` as changes to global tooling and behavior.
 
 ## Writing instructions

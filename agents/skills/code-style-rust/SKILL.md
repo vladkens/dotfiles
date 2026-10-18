@@ -8,6 +8,7 @@ description: Apply the user's established coding style to Rust code. Use when th
 - Follow the project's rustfmt settings; the usual defaults are `tab_spaces = 2`, `max_width = 100`, and `use_small_heuristics = "Max"`.
 - Use compact names supplied by domain or module context, such as `Config`, `Data`, `req`, `rep`, `dat`, and `cur`. Short closure parameters such as `x` or `e` are fine when their meaning is clear.
 - Keep the module layout shallow and related records, parsing, implementations, and helpers together; group peer integrations in their own modules.
+- Separate logical steps inside a function with one blank line, including after a statement-level `if`, `for`, `while`, `loop`, or `match` block before the next statement. rustfmt doesn't add these, so check them before every commit.
 
 ## Types and Logic
 

@@ -28,12 +28,6 @@
     "deny": [],
     "defaultMode": "auto"
   },
-  "autoMode": {
-    "allow": [
-      "$defaults",
-      "Driving the person's disposable UTM VMs through their VM tool (/Users/user/Code/vm/vm prepare, start, stop, exec, ssh, ssh-config, reset, status), and copying files into or out of those VMs with scp/rsync/ssh, is explicitly allowed: the person gave agents full use of these VMs, including breaking and resetting them."
-    ]
-  },
   "model": "opus",
   "hooks": {
     "PreToolUse": [
@@ -44,6 +38,19 @@
             "type": "command",
             "command": "jq -c '.tool_input as $input | (.cwd // \"\") as $cwd | \"^[ \\t]*git[ \\t]+-C[ \\t]+(?<path>[^[:space:]]+)\" as $pattern | (try ($input.command | capture($pattern)) catch {}) | select((.path // \"\") as $path | $path == \".\" or $path == \"./\" or ($path | rtrimstr(\"/\")) == ($cwd | rtrimstr(\"/\"))) | {hookSpecificOutput:{hookEventName:\"PreToolUse\",updatedInput:($input | .command |= sub($pattern; \"git\"))}}'",
             "if": "Bash(git -C *)"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "GH_PR_WAIT_MINUTES=55 /Users/user/.local/bin/claude-pr-watch",
+            "asyncRewake": true,
+            "timeout": 3600
           }
         ]
       }
@@ -67,10 +74,16 @@
     }
   },
   "autoUpdatesChannel": "stable",
+  "tui": "fullscreen",
   "autoMemoryEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "theme": "auto",
   "editorMode": "normal",
   "remoteControlAtStartup": false,
-  "tui": "fullscreen"
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Driving the person's disposable UTM VMs through their VM tool (/Users/user/Code/vm/vm prepare, start, stop, exec, ssh, ssh-config, reset, status), and copying files into or out of those VMs with scp/rsync/ssh, is explicitly allowed: the person gave agents full use of these VMs, including breaking and resetting them."
+    ]
+  }
 }
