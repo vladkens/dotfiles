@@ -1,0 +1,68 @@
+#!/bin/sh
+# Claude Code PostToolUse hook (Bash, asyncRewake): after a `git push` or `gh pr create`, waits in
+# the background until that branch's PR needs attention or is ready (CI finished on the head commit,
+# GitHub knows whether it merges, Copilot reviewed it, or CI failed), then wakes the agent with
+# `gh-pr-status` and what to do next. Gives up after 55 minutes, inside the hook's 60-minute timeout.
+# Exits 0 silently for any other command or a branch without an open PR.
+set -u
+
+input=$(cat)
+cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
+cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
+
+# Only `git push`, `git -C <dir> push` or `gh pr create` as a command, not `git stash push` or a
+# commit message that mentions a push.
+printf '%s' "$cmd" | grep -Eq '(^|[;&|(][[:space:]]*)(git( -C [^ ]+)? push|gh pr create)([[:space:]]|$)' \
+  || exit 0
+
+# `git -C <dir> push` pushes another worktree: watch that one.
+dir=$(printf '%s' "$cmd" | sed -n 's/.*git -C \([^ ]*\) .*push.*/\1/p')
+cd "${dir:-$cwd}" 2>/dev/null || exit 0
+# `push origin local:remote` pushes to another branch name: look the PR up by that one.
+branch=$(printf '%s' "$cmd" | sed -n 's/.*push.* [^ :]*:\([^ ]*\).*/\1/p')
+# `gh pr create --head <branch>` names the branch outright.
+[ -n "$branch" ] || branch=$(printf '%s' "$cmd" | sed -n 's/.*gh pr create.*--head[ =]\([^ ]*\).*/\1/p')
+pr=$(gh pr view $branch --json number,state --jq 'select(.state == "OPEN") | .number' 2>/dev/null)
+[ -n "$pr" ] || exit 0
+
+# A newer push restarts the wait: drop an older watcher of the same PR.
+lock="${TMPDIR:-/tmp}/claude-pr-watch-$(printf '%s' "$(pwd)" | cksum | cut -d' ' -f1)-$pr"
+echo $$ > "$lock"
+
+start=$(date +%s)
+while :; do
+  out=$(gh-pr-status "$pr" 2>&1)
+  code=$?
+
+  # Still waiting: CI pending, mergeability UNKNOWN (GitHub reports it for a while after a push), or
+  # Copilot not on the head yet while CI hasn't failed. Threads left from an earlier head don't
+  # count: the new head's review decides.
+  waiting=$(printf '%s\n' "$out" | awk '
+    /^  (ready|NOT READY) \|/ {
+      pending = ($0 ~ /ci (PENDING|EXPECTED|NONE)/ || $0 ~ /\| UNKNOWN \|/)
+      nocop = ($0 ~ /copilot (NOT on|no review yet)/)
+      failed = ($0 ~ /ci (FAILURE|ERROR)/)
+      if (pending || (nocop && !failed)) w = 1
+    }
+    END { print w ? 1 : 0 }')
+  [ "$waiting" = 1 ] || break
+
+  if [ $(( $(date +%s) - start )) -ge $(( 55 * 60 )) ]; then
+    code=-1
+    break
+  fi
+
+  sleep 60
+  [ "$(cat "$lock" 2>/dev/null)" = $$ ] || exit 0
+done
+
+[ "$(cat "$lock" 2>/dev/null)" = $$ ] || exit 0
+rm -f "$lock"
+
+case $code in
+  0) next="It is ready: tell the person it can be merged." ;;
+  -1) next="Still waiting after 55 minutes: check CI and Copilot again." ;;
+  *) next="Handle it by the pull request rules: fix the CI failures and correct review comments in one push, answer and resolve the rest; after the one Copilot round, report the status instead of starting another." ;;
+esac
+printf 'PR #%s in %s after the last push:\n%s\n\n%s\n' "$pr" "$(pwd)" "$out" "$next" >&2
+exit 2

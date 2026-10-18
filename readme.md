@@ -27,7 +27,7 @@ Profile contents are defined in `.dotter/global.toml`.
 Rust stable, the default stable Python supplied by uv, and Node.js LTS.
 
 `containers` installs Docker, Compose, Buildx, and Colima. Start the container
-engine with `colima start`; stop it with `colima stop`.
+engine with `colima-up` (4 CPUs, 8 GiB, Rosetta); stop it with `colima stop`.
 
 Preview config changes, then install the selected groups and link their configs:
 

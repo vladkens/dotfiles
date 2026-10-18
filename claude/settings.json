@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "GH_PR_WAIT_MINUTES=55 /Users/user/.local/bin/claude-pr-watch",
+            "command": "~/.local/bin/claude-pr-watch",
             "asyncRewake": true,
             "timeout": 3600
           }
