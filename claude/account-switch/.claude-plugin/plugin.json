@@ -1,0 +1,5 @@
+{
+  "name": "account-switch",
+  "version": "0.1.0",
+  "description": "Switch the Claude subscription account when a rate-limit window is nearly full, and back once it resets"
+}

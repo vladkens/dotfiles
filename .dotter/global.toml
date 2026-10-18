@@ -35,6 +35,7 @@ depends = ["terminal", "develop", "containers", "zed"]
 "bin" = "~/.local/bin"
 "claude/settings.json" = "~/.claude/settings.json"
 "claude/statusline.sh" = "~/.claude/statusline.sh"
+"claude/account-switch" = { target = "~/.claude/account-switch", type = "symbolic", recurse = false }
 "codex/config.toml" = "~/.codex/config.toml"
 "codex/rules" = { target = "~/.codex/rules", type = "symbolic", recurse = false }
 "dotfiles/revdiff/config" = "~/.config/revdiff/config"
