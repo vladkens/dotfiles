@@ -13,7 +13,7 @@ Usage (prefix with `uv run --script account-switch.py`):
               profile is logged out without revoking, so close its sessions first
   use NAME    make NAME the login of every Claude session of the profile
   status      show the saved accounts, the live one and when a full one frees up
-  measure     read session.measure rate limits as JSON on stdin and switch when needed
+  measure     verify a session.measure hint against the live account's usage and switch
 
 Accounts are used in PRIORITY order: the first one until its 5-hour or weekly window reaches
 THRESHOLD percent, then the next one with room, and back once the first one's window resets.
@@ -26,6 +26,7 @@ import argparse
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -34,16 +35,23 @@ import time
 import unicodedata
 from contextlib import ExitStack, contextmanager, nullcontext
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 PRIORITY = ("sw", "personal")
-THRESHOLD = 97  # percent of a window that counts as full
+# Percent of a window that counts as full: parallel agents can burn the last 10% between two
+# readings, and a switch takes about 30 s to reach every session.
+THRESHOLD = 90
 SETTLE = 60  # seconds after a switch when sessions may still report the previous account
 LOCK_WAIT = 20  # seconds to wait for all of Claude Code's locks together
+RETRY = 75  # a hint has not been handled; the mod must retry even if its numbers stay the same
+POLL_INTERVAL = 60  # shared by all sessions, including after a failed request
 
 CLAUDE_DIR = Path.home() / ".claude"
 CONFIG = Path.home() / ".claude.json"
-STATE = CLAUDE_DIR / "account-switch.json"  # no secrets: when each full account frees up
+STATE = CLAUDE_DIR / "account-switch.json"  # no secrets: blocked windows and usage retry state
 LIVE = "Claude Code-credentials"  # the Keychain item Claude Code reads its login from
 SAVED = "Claude Code-account-switch"  # one item per saved account, keyed by its name
 WINDOWS = ("five_hour", "seven_day")
@@ -224,12 +232,15 @@ def owner(saved: dict[str, dict], account: dict | None) -> str | None:
     )
 
 
-def switch(name: str) -> bool:
-    """Make `name` the live login; False when it already is."""
+def switch(name: str, expected: tuple[dict, str] | None = None) -> bool:
+    """Switch unless already there or the expected login has changed."""
     with login_locks():
         user = keychain_user()
         item = keychain_read(LIVE, user) or {}
         live = config_account()
+        if expected and (not same_account(live, expected[0]) or access_token(item) != expected[1]):
+            return False
+
         saved = saved_accounts()
         if name not in saved:
             raise SystemExit(f"{name} is not saved; log in as it and run `add {name}`")
@@ -263,21 +274,171 @@ def switch(name: str) -> bool:
 
 
 def pick(current: str, limits: list[dict], saved: list[str], full: dict, now: float) -> str:
-    """The account to use after `current` reported `limits`; updates `full` (name: free at)."""
-    resets = [
-        datetime.fromisoformat(limit["resetsAt"]).timestamp()
-        if limit.get("resetsAt")
-        else now + 5 * 3600
-        for limit in limits
-        if limit["kind"] in WINDOWS and limit["percentUsed"] >= THRESHOLD
-    ]
-    if resets:
-        full[current] = max(resets)
+    """Merge verified windows without clearing missing ones; keep old scalar state readable."""
+    blocked = full.get(current, {})
+    if isinstance(blocked, (int, float)):
+        # The old format did not record which window blocked the account.
+        blocked = {"legacy": blocked}
+
+    blocked = {kind: until for kind, until in blocked.items() if until > now}
+    reported = {limit["kind"] for limit in limits}
+    if all(kind in reported for kind in WINDOWS):
+        blocked.pop("legacy", None)
+
+    for limit in limits:
+        kind = limit["kind"]
+        if kind not in WINDOWS:
+            continue
+
+        if limit["percentUsed"] < THRESHOLD:
+            blocked.pop(kind, None)
+            continue
+
+        until = (
+            datetime.fromisoformat(limit["resetsAt"]).timestamp()
+            if limit.get("resetsAt")
+            else now + (5 * 3600 if kind == "five_hour" else 7 * 86400)
+        )
+        if until > now:
+            blocked[kind] = until
+        else:
+            blocked.pop(kind, None)
+
+    if blocked:
+        full[current] = blocked
     else:
         full.pop(current, None)
 
-    free = [name for name in PRIORITY if name in saved and full.get(name, 0) <= now]
+    free = [name for name in PRIORITY if name in saved and full_until(full.get(name, {})) <= now]
     return free[0] if free else current
+
+
+def full_until(blocked: dict | float) -> float:
+    return max(blocked.values(), default=0) if isinstance(blocked, dict) else blocked
+
+
+# MARK: Verified usage
+
+
+class UsageUnavailable(Exception):
+    def __init__(self, message: str, retry_after: float = POLL_INTERVAL):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # A redirect must not forward the bearer to another host.
+        return None
+
+
+def access_token(login: dict) -> str | None:
+    return (login.get("claudeAiOauth") or {}).get("accessToken")
+
+
+def retry_delay(value: str | None, now: float) -> float:
+    try:
+        delay = float(value)
+    except (TypeError, ValueError):
+        try:
+            delay = parsedate_to_datetime(value).timestamp() - now
+        except (TypeError, ValueError, OverflowError):
+            return 300
+
+    return max(POLL_INTERVAL, delay) if math.isfinite(delay) else 300
+
+
+def oauth_get(path: str, token: str) -> dict:
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
+        "User-Agent": "claude-account-switch/0.1",
+    }
+    if path == "usage":
+        headers["anthropic-beta"] = "oauth-2025-04-20"
+
+    request = Request(f"https://api.anthropic.com/api/oauth/{path}", headers=headers)
+    try:
+        with build_opener(NoRedirect()).open(request, timeout=5) as response:
+            data = json.load(response)
+    except HTTPError as error:
+        delay = (
+            retry_delay(error.headers.get("Retry-After"), time.time())
+            if error.code in (429, 403)
+            else POLL_INTERVAL
+        )
+        raise UsageUnavailable(f"Account usage check failed (HTTP {error.code}); will retry", delay)
+    except (URLError, OSError, ValueError):
+        raise UsageUnavailable("Account usage check unavailable; will retry") from None
+
+    if not isinstance(data, dict):
+        raise UsageUnavailable("Account usage check returned invalid data; will retry")
+
+    return data
+
+
+def verified_usage(account: dict, token: str, state: dict) -> list[dict]:
+    fingerprint = hashlib.sha256(token.encode()).hexdigest()
+    verified = state.get("verifiedLogin", {})
+    if verified.get("tokenHash") != fingerprint or not same_account(verified, account):
+        profile = oauth_get("profile", token)
+        user, organization = profile.get("account"), profile.get("organization")
+        if (
+            not isinstance(user, dict)
+            or not isinstance(organization, dict)
+            or not isinstance(user.get("uuid"), str)
+            or not user["uuid"]
+            or not isinstance(organization.get("uuid"), str)
+            or not organization["uuid"]
+        ):
+            raise UsageUnavailable("Account profile check returned invalid data; will retry")
+
+        actual = {
+            "accountUuid": user["uuid"],
+            "organizationUuid": organization["uuid"],
+        }
+        if not same_account(actual, account):
+            raise UsageUnavailable(
+                "Account and live token disagree; waiting for the login to settle"
+            )
+
+        state["verifiedLogin"] = actual | {"tokenHash": fingerprint}
+
+    usage = oauth_get("usage", token)
+    limits = []
+    for kind in WINDOWS:
+        window = usage.get(kind)
+        if window is None:
+            continue
+
+        if not isinstance(window, dict):
+            raise UsageUnavailable("Account usage check returned an invalid window; will retry")
+
+        used, reset = window.get("utilization"), window.get("resets_at")
+        if (
+            isinstance(used, bool)
+            or not isinstance(used, (int, float))
+            or not math.isfinite(used)
+            or used < 0
+        ):
+            raise UsageUnavailable("Account usage check returned an invalid percentage; will retry")
+
+        if reset is not None:
+            try:
+                if not isinstance(reset, str) or datetime.fromisoformat(reset).tzinfo is None:
+                    raise ValueError
+            except ValueError:
+                raise UsageUnavailable(
+                    "Account usage check returned an invalid reset; will retry"
+                ) from None
+
+        limits.append({"kind": kind, "percentUsed": used, "resetsAt": reset})
+
+    if not limits:
+        raise UsageUnavailable("Account usage check returned no windows; will retry")
+
+    return limits
 
 
 # MARK: Commands
@@ -327,7 +488,7 @@ def cmd_status(args: argparse.Namespace) -> None:
             continue
 
         email = saved[name]["oauthAccount"].get("emailAddress", "")
-        until = full.get(name, 0)
+        until = full_until(full.get(name, {}))
         note = (
             f", full until {datetime.fromtimestamp(until):%H:%M %d.%m}"
             if until > time.time()
@@ -336,29 +497,61 @@ def cmd_status(args: argparse.Namespace) -> None:
         print(f"{'*' if name == live else ' '} {name}: {email}{note}")
 
 
-def cmd_measure(args: argparse.Namespace) -> None:
-    limits = json.load(sys.stdin)
-    if not limits:
-        return
+def cmd_measure(args: argparse.Namespace) -> int | None:
+    # Anonymous session figures only wake the check; they never update an account's limits.
+    # Keep accepting the old mod's list while the new hook is being reloaded.
+    json.load(sys.stdin)
 
-    # Sessions measure at once: one of them decides, the others' readings are skipped.
     with state_lock(wait=False) as state:
         now = time.time()
         if state is None or now - state.get("switchedAt", 0) < SETTLE:
-            return
+            return RETRY
+
+        if now < state.get("usageRetryAt", 0):
+            return RETRY
 
         saved = saved_accounts()
-        current = owner(saved, config_account())
+        with login_locks():
+            account = config_account()
+            item = keychain_read(LIVE, keychain_user()) or {}
+
+        current = owner(saved, account)
         if current is None:
             return
 
-        target = pick(current, limits, list(saved), state.setdefault("full", {}), now)
-        if target != current and switch(target):
-            state["switchedAt"] = now
-            print(f"Claude account: {current} → {target}")
+        state["usageRetryAt"] = now + POLL_INTERVAL
+        token = access_token(item)
+        if not token:
+            return RETRY
+
+        try:
+            limits = verified_usage(account, token, state)
+        except UsageUnavailable as error:
+            state["usageRetryAt"] = time.time() + error.retry_after
+            print(str(error), file=sys.stderr)
+            return RETRY
+
+        # /login and token refresh can run while the network request is in flight.
+        with login_locks():
+            live = config_account()
+            live_token = access_token(keychain_read(LIVE, keychain_user()) or {})
+
+        if not same_account(live, account) or live_token != token:
+            return RETRY
+
+        target = pick(current, limits, list(saved), state.setdefault("full", {}), time.time())
+        if target != current:
+            if switch(target, expected=(account, token)):
+                state["switchedAt"] = time.time()
+                print(f"Claude account: {current} → {target}")
+
+            # Check the new login after SETTLE, including when no new response arrives.
+            return RETRY
+
+        return
 
 
-def main() -> None:
+def main() -> int | None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -383,8 +576,8 @@ def main() -> None:
     if other:
         raise SystemExit(f"Only the default profile is switched; {other[0]} is set")
 
-    globals()[f"cmd_{args.command}"](args)
+    return globals()[f"cmd_{args.command}"](args)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

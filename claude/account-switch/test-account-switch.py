@@ -17,6 +17,7 @@ import time
 import unittest
 from pathlib import Path
 from unittest import mock
+from urllib.error import HTTPError
 
 spec = importlib.util.spec_from_file_location(
     "account_switch", Path(__file__).with_name("account-switch.py")
@@ -27,6 +28,7 @@ spec.loader.exec_module(sw)
 SW = {"accountUuid": "a-sw", "organizationUuid": "o-sw", "emailAddress": "me@work"}
 PERSONAL = {"accountUuid": "a-me", "organizationUuid": "o-me", "emailAddress": "me@home"}
 FULL = [{"kind": "five_hour", "percentUsed": 97, "resetsAt": "2099-01-01T00:00:00Z"}]
+LOW = [{"kind": kind, "percentUsed": 20, "resetsAt": "2099-01-01T00:00:00Z"} for kind in sw.WINDOWS]
 
 
 def login(token: str) -> dict:
@@ -41,6 +43,7 @@ class Home(unittest.TestCase):
         home = Path(self.tmp.name)
         (home / ".claude").mkdir()
         self.keychain: dict[tuple[str, str], dict] = {}
+        self.usage = LOW
         patches = {
             "CLAUDE_DIR": home / ".claude",
             "CONFIG": home / ".claude.json",
@@ -49,6 +52,7 @@ class Home(unittest.TestCase):
             "keychain_write": self.keychain_write,
             "keychain_delete": lambda service, account: self.keychain.pop((service, account), None),
             "keychain_user": lambda: "me",
+            "oauth_get": self.oauth_get,
         }
         for name, value in patches.items():
             patcher = mock.patch.object(sw, name, value)
@@ -58,6 +62,28 @@ class Home(unittest.TestCase):
     def keychain_write(self, service: str, account: str, data: dict) -> None:
         self.keychain[(service, account)] = data
 
+    def oauth_get(self, path: str, token: str) -> dict:
+        if path == "usage":
+            return {
+                limit["kind"]: {
+                    "utilization": limit["percentUsed"],
+                    "resets_at": limit.get("resetsAt"),
+                }
+                for limit in self.usage
+            }
+
+        for (service, _), data in self.keychain.items():
+            if service == sw.SAVED and sw.access_token(data["login"]) == token:
+                account = data["oauthAccount"]
+                break
+        else:
+            account = self.live_account()
+
+        return {
+            "account": {"uuid": account["accountUuid"]},
+            "organization": {"uuid": account["organizationUuid"]},
+        }
+
     def log_in(self, account: dict, token: str) -> None:
         self.keychain[(sw.LIVE, "me")] = login(token) | {"mcpOAuth": {"server": "token"}}
         sw.CONFIG.write_text(json.dumps({"oauthAccount": account, "theme": "dark"}))
@@ -65,9 +91,9 @@ class Home(unittest.TestCase):
     def save(self, name: str, account: dict, token: str) -> None:
         self.keychain[(sw.SAVED, name)] = {"login": login(token), "oauthAccount": account}
 
-    def measure(self, limits: list[dict]) -> None:
+    def measure(self, limits: list[dict]) -> int | None:
         with mock.patch("sys.stdin", io.StringIO(json.dumps(limits))):
-            sw.cmd_measure(None)
+            return sw.cmd_measure(None)
 
     def live_account(self) -> dict:
         return json.loads(sw.CONFIG.read_text())["oauthAccount"]
@@ -78,7 +104,7 @@ class PickTest(unittest.TestCase):
         full = {}
         limits = [{"kind": "five_hour", "percentUsed": 97.5, "resetsAt": "2026-10-18T15:00:00Z"}]
         self.assertEqual(sw.pick("sw", limits, ["sw", "personal"], full, 0), "personal")
-        self.assertEqual(full["sw"], 1792335600)
+        self.assertEqual(full["sw"], {"five_hour": 1792335600})
 
     def test_weekly_window_counts_and_other_kinds_do_not(self):
         weekly = [{"kind": "seven_day", "percentUsed": 99, "resetsAt": "2026-10-20T00:00:00Z"}]
@@ -96,6 +122,37 @@ class PickTest(unittest.TestCase):
         limits = [{"kind": "five_hour", "percentUsed": 40}]
         self.assertEqual(sw.pick("personal", limits, ["sw", "personal"], full, 999), "personal")
         self.assertEqual(sw.pick("personal", limits, ["sw", "personal"], full, 1001), "sw")
+
+    def test_partial_reading_keeps_the_other_blocked_window(self):
+        full = {"sw": {"five_hour": 2000}}
+        weekly = [{"kind": "seven_day", "percentUsed": 20}]
+        self.assertEqual(sw.pick("sw", weekly, ["sw", "personal"], full, 1000), "personal")
+        self.assertEqual(full["sw"], {"five_hour": 2000})
+
+    def test_only_a_reported_window_is_cleared(self):
+        full = {"sw": {"five_hour": 2000, "seven_day": 3000}}
+        limits = [{"kind": "five_hour", "percentUsed": 20}]
+        self.assertEqual(sw.pick("sw", limits, ["sw", "personal"], full, 1000), "personal")
+        self.assertEqual(full["sw"], {"seven_day": 3000})
+
+    def test_partial_reading_does_not_shorten_another_windows_block(self):
+        full = {"sw": {"seven_day": 3000}}
+        limits = [{"kind": "five_hour", "percentUsed": 100, "resetsAt": "1970-01-01T00:33:20Z"}]
+        sw.pick("sw", limits, ["sw", "personal"], full, 1000)
+        self.assertEqual(sw.full_until(full["sw"]), 3000)
+
+    def test_legacy_block_survives_partial_data_but_not_a_complete_verified_reading(self):
+        full = {"sw": 2000}
+        sw.pick("sw", LOW[:1], ["sw", "personal"], full, 1000)
+        self.assertEqual(full["sw"], {"legacy": 2000})
+        sw.pick("sw", LOW, ["sw", "personal"], full, 1000)
+        self.assertNotIn("sw", full)
+
+    def test_missing_window_expires_at_its_own_reset(self):
+        full = {"sw": {"five_hour": 1000, "seven_day": 2000}}
+        self.assertEqual(sw.pick("sw", [], ["sw", "personal"], full, 1001), "personal")
+        self.assertEqual(full["sw"], {"seven_day": 2000})
+        self.assertEqual(sw.pick("sw", [], ["sw", "personal"], full, 2001), "sw")
 
 
 class SwitchTest(Home):
@@ -150,12 +207,13 @@ class SwitchTest(Home):
 
     def test_measure_switches_and_then_waits_for_sessions_to_follow(self):
         self.log_in(SW, "sw")
+        self.usage = FULL
 
-        self.measure(FULL)
+        self.assertEqual(self.measure(FULL), sw.RETRY)
         self.assertEqual(self.live_account(), PERSONAL)
 
         # A reading right after the switch may still be the old account's: it is ignored.
-        self.measure([{"kind": "five_hour", "percentUsed": 99}])
+        self.assertEqual(self.measure([{"kind": "five_hour", "percentUsed": 99}]), sw.RETRY)
         state = json.loads(sw.STATE.read_text())
         self.assertEqual(list(state["full"]), ["sw"])
 
@@ -164,9 +222,128 @@ class SwitchTest(Home):
 
         with sw.STATE.with_suffix(".lock").open("a") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
-            self.measure(FULL)
+            self.assertEqual(self.measure(FULL), sw.RETRY)
 
         self.assertEqual(self.live_account(), SW)
+
+    def test_same_hint_is_processed_after_settle_without_a_new_response(self):
+        self.log_in(SW, "sw")
+        self.usage = FULL
+        sw.STATE.write_text(json.dumps({"switchedAt": 1000}))
+        with mock.patch.object(sw.time, "time", return_value=1030):
+            self.assertEqual(self.measure(FULL), sw.RETRY)
+
+        with mock.patch.object(sw.time, "time", return_value=1061):
+            self.assertEqual(self.measure(FULL), sw.RETRY)
+
+        self.assertEqual(self.live_account(), PERSONAL)
+        state = json.loads(sw.STATE.read_text())
+        self.assertIn("five_hour", state["full"]["sw"])
+
+    def test_a_delayed_sw_hint_does_not_block_personal(self):
+        self.log_in(PERSONAL, "me")
+        sw.STATE.write_text(json.dumps({"full": {"sw": 5000}, "switchedAt": 1000}))
+        with mock.patch.object(sw.time, "time", return_value=1061):
+            self.assertIsNone(self.measure(FULL))
+
+        state = json.loads(sw.STATE.read_text())
+        self.assertNotIn("personal", state["full"])
+        self.assertEqual(self.live_account(), PERSONAL)
+
+    def test_profile_mismatch_does_not_assign_usage_to_the_config_account(self):
+        self.log_in(PERSONAL, "sw-old")
+        with mock.patch.object(sw, "oauth_get", wraps=self.oauth_get) as request:
+            self.assertEqual(self.measure(FULL), sw.RETRY)
+
+        self.assertEqual(request.call_count, 1)
+        self.assertNotIn("full", json.loads(sw.STATE.read_text()))
+        self.assertEqual(self.live_account(), PERSONAL)
+
+    def test_login_change_during_request_discards_the_result(self):
+        self.log_in(SW, "sw")
+
+        def change_login(account, token, state):
+            self.log_in(PERSONAL, "me")
+            return FULL
+
+        with mock.patch.object(sw, "verified_usage", side_effect=change_login):
+            self.assertEqual(self.measure(FULL), sw.RETRY)
+
+        self.assertNotIn("full", json.loads(sw.STATE.read_text()))
+        self.assertEqual(self.live_account(), PERSONAL)
+
+    def test_switch_checks_expected_login_under_its_lock(self):
+        self.log_in(PERSONAL, "me")
+        self.assertFalse(sw.switch("sw", expected=(SW, "at-sw")))
+        self.assertEqual(self.live_account(), PERSONAL)
+
+    def test_usage_failure_preserves_full_and_retries_after_backoff(self):
+        self.log_in(SW, "sw")
+        before = {"personal": 5000}
+        sw.STATE.write_text(json.dumps({"full": before}))
+        with (
+            mock.patch.object(sw.time, "time", return_value=1000),
+            mock.patch.object(sw, "oauth_get", side_effect=sw.UsageUnavailable("throttled", 300)),
+        ):
+            self.assertEqual(self.measure(FULL), sw.RETRY)
+
+        with (
+            mock.patch.object(sw.time, "time", return_value=1299),
+            mock.patch.object(sw, "oauth_get") as request,
+        ):
+            self.assertEqual(self.measure(FULL), sw.RETRY)
+            request.assert_not_called()
+
+        state = json.loads(sw.STATE.read_text())
+        self.assertEqual(state["full"], before)
+        self.assertEqual(state["usageRetryAt"], 1300)
+        with mock.patch.object(sw.time, "time", return_value=1300):
+            self.assertIsNone(self.measure(FULL))
+
+    def test_verified_profile_is_reused_only_for_the_same_token(self):
+        self.log_in(SW, "sw")
+        state = {}
+        with mock.patch.object(sw, "oauth_get", wraps=self.oauth_get) as request:
+            sw.verified_usage(SW, "at-sw", state)
+            sw.verified_usage(SW, "at-sw", state)
+            sw.verified_usage(SW, "at-new", state)
+
+        self.assertEqual(
+            [call.args[0] for call in request.call_args_list],
+            ["profile", "usage", "usage", "profile", "usage"],
+        )
+        self.assertNotIn("at-sw", json.dumps(state))
+        self.assertNotIn("at-new", json.dumps(state))
+
+    def test_malformed_profile_preserves_existing_blocks(self):
+        self.log_in(SW, "sw")
+        full = {"sw": {"five_hour": 5000}}
+        for profile in ({}, {"account": []}, {"account": {"uuid": "a-sw"}, "organization": {}}):
+            with self.subTest(profile=profile):
+                sw.STATE.write_text(json.dumps({"full": full}))
+                with mock.patch.object(sw, "oauth_get", return_value=profile):
+                    self.assertEqual(self.measure(FULL), sw.RETRY)
+
+                self.assertEqual(json.loads(sw.STATE.read_text())["full"], full)
+
+    def test_malformed_usage_cannot_clear_a_block_or_switch_accounts(self):
+        self.log_in(SW, "sw")
+        full = {"sw": {"five_hour": 5000}}
+        profile = self.oauth_get("profile", "at-sw")
+        for usage in (
+            {},
+            {"five_hour": {"utilization": 20, "resets_at": "bad"}},
+            {"five_hour": {"utilization": float("nan")}},
+            {"five_hour": {"utilization": "20"}},
+            {"five_hour": None},
+        ):
+            with self.subTest(usage=usage):
+                sw.STATE.write_text(json.dumps({"full": full}))
+                with mock.patch.object(sw, "oauth_get", side_effect=[profile, usage]):
+                    self.assertEqual(self.measure(FULL), sw.RETRY)
+
+                self.assertEqual(json.loads(sw.STATE.read_text())["full"], full)
+                self.assertEqual(self.live_account(), SW)
 
     def test_other_profiles_are_left_alone(self):
         self.log_in(SW, "sw")
@@ -222,6 +399,44 @@ class LockTest(Home):
             pass
 
         self.assertTrue(lock.exists())
+
+
+class UsageTest(unittest.TestCase):
+    def test_api_contract(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value = io.StringIO('{"five_hour":{"utilization":97}}')
+        opener = mock.Mock()
+        opener.open.return_value = response
+        with mock.patch.object(sw, "build_opener", return_value=opener):
+            self.assertEqual(sw.oauth_get("usage", "secret")["five_hour"]["utilization"], 97)
+
+        request = opener.open.call_args.args[0]
+        self.assertEqual(request.full_url, "https://api.anthropic.com/api/oauth/usage")
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+        self.assertEqual(request.get_header("Anthropic-beta"), "oauth-2025-04-20")
+        self.assertEqual(opener.open.call_args.kwargs["timeout"], 5)
+
+    def test_rate_limit_retry_after_is_preserved(self):
+        error = HTTPError(
+            "https://api.anthropic.com", 429, "throttled", {"Retry-After": "600"}, None
+        )
+        opener = mock.Mock()
+        opener.open.side_effect = error
+        with (
+            mock.patch.object(sw, "build_opener", return_value=opener),
+            self.assertRaises(sw.UsageUnavailable) as raised,
+        ):
+            sw.oauth_get("usage", "secret")
+
+        self.assertEqual(raised.exception.retry_after, 600)
+        self.assertNotIn("secret", str(raised.exception))
+
+    def test_retry_after_supports_seconds_dates_and_invalid_values(self):
+        self.assertEqual(sw.retry_delay("120", 0), 120)
+        self.assertEqual(sw.retry_delay("Thu, 01 Jan 1970 00:05:00 GMT", 60), 240)
+        self.assertEqual(sw.retry_delay(None, 0), 300)
+        self.assertEqual(sw.retry_delay("garbage", 0), 300)
+        self.assertEqual(sw.retry_delay("nan", 0), 300)
 
 
 if __name__ == "__main__":

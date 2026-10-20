@@ -1,19 +1,54 @@
-import type { Register } from "claude-code"
+import type { EngineInterface, Register, SessionRateLimit } from "claude-code"
 
-// Hands every rate-limit reading to account-switch.py, which switches the profile's login when
-// the live account's window is nearly full and another account has room, or back once it resets.
+// Readings only wake a verified check. Keep work pending until Python acknowledges it.
+let last = "[]"
+let pending = false
+let running = false
+
+function key(limits: readonly SessionRateLimit[]) {
+  return JSON.stringify(limits.map(limit => [limit.kind, limit.percentUsed, limit.resetsAt]))
+}
+
+async function check($: EngineInterface, limits: readonly SessionRateLimit[], changed = false) {
+  const reading = key(limits)
+  if (changed || reading !== last) pending = true
+
+  last = reading
+  if (!pending || running) return
+
+  running = true
+  pending = false
+  try {
+    const script = `${$.plugin.root}/account-switch.py`
+    const run = await $.process.run(["uv", "run", "--script", script, "measure"], {
+      stdin: JSON.stringify(limits),
+      timeoutMs: 60_000,
+    })
+    if (run.exitCode !== 0) pending = true
+
+    const text = (run.stdout || run.stderr).trim()
+    if (text) $.ui.toast(text)
+  } catch {
+    pending = true
+    $.ui.toast("Account usage check could not run; will retry")
+  } finally {
+    running = false
+  }
+}
+
 export const register: Register = on => {
   on("session.measure", async ($, e, next) => {
     const result = await next(e)
-    if (!e.changed.includes("rateLimits") || e.rateLimits.length === 0) return result
+    if (e.changed.includes("rateLimits")) await check($, e.rateLimits, true)
 
-    const script = `${$.plugin.root}/account-switch.py`
-    const run = await $.process.run(["uv", "run", "--script", script, "measure"], {
-      stdin: JSON.stringify(e.rateLimits),
-      timeoutMs: 60_000,
-    })
-    const text = (run.exitCode === 0 ? run.stdout : run.stderr).trim()
-    if (text) $.ui.toast(text)
+    return result
+  })
+
+  // Retry skipped checks even if a blocked session produces no more responses.
+  on("session.start", async ($, e, next) => {
+    const result = await next(e)
+    $.clock.every(60_000, async () => check($, (await $.session.usage()).rateLimits))
+    await check($, (await $.session.usage()).rateLimits)
 
     return result
   })
