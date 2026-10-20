@@ -6,6 +6,8 @@
 """Read Discord messages, newest first, without restarting the client.
 
 Examples (prefix commands with `uv run --script ds-messages.py`):
+  servers
+  channels 123
   get https://discord.com/channels/123/456 --limit 100
   auth
 
@@ -128,6 +130,61 @@ def authorize(client: requests.Session) -> None:
     client.headers["Authorization"] = valid[0]
 
 
+def server_id(target: str) -> str:
+    if target.isdigit():
+        return target
+
+    parsed = urlparse(target)
+    match = re.fullmatch(r"/channels/(\d+)(?:/\d+){0,2}/?", parsed.path)
+    if parsed.scheme != "https" or parsed.netloc != "discord.com" or not match:
+        raise ValueError("Expected a server ID or https://discord.com/channels/SERVER")
+
+    return match.group(1)
+
+
+def print_servers(client: requests.Session) -> None:
+    servers: list[dict] = []
+    after = "0"
+    while True:
+        page = api_get(client, "/users/@me/guilds", limit=200, after=after)
+        if not isinstance(page, list):
+            raise TypeError("Discord session expired or servers response is invalid")
+
+        servers.extend(page)
+        if len(page) < 200:
+            break
+
+        after = page[-1]["id"]
+
+    for server in sorted(servers, key=lambda item: item.get("name", "").casefold()):
+        print(f"{server['id']}\t{server.get('name', '')}")
+
+    print(f"servers: {len(servers)}", file=sys.stderr)
+
+
+def print_channels(client: requests.Session, server: str) -> None:
+    items = api_get(client, f"/guilds/{server}/channels")
+    if not isinstance(items, list):
+        raise TypeError("Discord session expired or channels response is invalid")
+
+    # Text, announcement and forum channels hold messages; voice, stage and categories don't.
+    kinds = {0: "text", 5: "announcement", 15: "forum"}
+    categories = {item["id"]: item for item in items if item.get("type") == 4}
+    readable = [item for item in items if item.get("type") in kinds]
+
+    def order(item: dict) -> tuple[int, int]:
+        parent = categories.get(item.get("parent_id") or "")
+        return (parent.get("position", 0) + 1 if parent else 0, item.get("position", 0))
+
+    readable.sort(key=order)
+    for item in readable:
+        link = f"https://discord.com/channels/{server}/{item['id']}"
+        category = categories.get(item.get("parent_id") or "", {}).get("name", "")
+        print(f"{link}\t{kinds[item['type']]}\t{category}\t#{item.get('name', '')}")
+
+    print(f"channels: {len(readable)}", file=sys.stderr)
+
+
 def channel_ids(url: str) -> tuple[str, str]:
     parsed = urlparse(url)
     match = re.fullmatch(r"/channels/(@me|\d+)/(\d+)(?:/\d+)?/?", parsed.path)
@@ -171,11 +228,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("auth", help="Check authorization from the local Discord session")
+    commands.add_parser("servers", help="List servers the account belongs to")
+    channels = commands.add_parser("channels", help="List a server's text channels with links")
+    channels.add_argument("server", help="Server ID or https://discord.com/channels/SERVER link")
     get = commands.add_parser("get", help="Print recent messages as Markdown, newest first")
     get.add_argument("url")
     get.add_argument("--limit", type=int, default=100)
     args = parser.parse_args()
     guild, channel = "", ""
+    if args.command == "channels":
+        guild = server_id(args.server)
+
     if args.command == "get":
         guild, channel = channel_ids(args.url)
         if args.limit < 1:
@@ -185,6 +248,14 @@ def main() -> None:
         authorize(client)
         if args.command == "auth":
             print("authorization: verified from local Discord storage")
+            return
+
+        if args.command == "servers":
+            print_servers(client)
+            return
+
+        if args.command == "channels":
+            print_channels(client, guild)
             return
 
         messages: dict[str, dict] = {}

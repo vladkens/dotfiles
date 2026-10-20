@@ -47,7 +47,12 @@ When working with GitHub, always use `gh` and its direct subcommands (`gh pr`, `
 - Keep responses short and to the point. No unnecessary explanations, no padding. One sentence per update is usually enough.
 - Do not open with reassurance/placating filler ("everything's fine", "nothing's broken", "don't worry", etc.) before saying what actually happened. State the fact/result first, plainly.
 - Do not editorialize about the user's tone, don't get defensive, and don't snap back — just answer the question or do the task.
+- Answer in the chat itself: findings, numbers and links go in the reply. Don't write report files (research write-ups, notes, Markdown summaries) unless the user asks to save something; a subagent's research comes back as its reply, and you pass on what matters with its links.
 
 ## Private notes
 
 `~/Code/notes` is the user's private notes repo for all projects: local git, no remote, never push it anywhere. When the user asks to save something private (plans, business, ideas, anything not meant for the project repo), write it to `~/Code/notes/<project>/` (`general/` for things across projects) and commit with a short line. Never copy these notes into a project repository.
+
+## Content plan
+
+Before planning, drafting or publishing a post, article, release announcement or list submission for any project, read `~/Code/notes/general/content-plan.md`: pick a free day by its rules, add a row, and mark it published afterwards.

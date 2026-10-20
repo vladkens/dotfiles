@@ -17,6 +17,7 @@ Examples (prefix commands with `uv run --script tg-cli.py`):
   comment list https://t.me/channel/123 --json
 
 Private channels accept their -100… ID from `channel list` or a t.me/c/… link.
+Joined groups also accept their t.me/+… invite link; it is checked, never used to join.
 Dates use UTC; --since is inclusive and --until is exclusive. Results are newest
 first. Pass next_before as --before to continue the same query without overlap.
 Every command reads the existing authorization from native Telegram for macOS
@@ -27,12 +28,12 @@ Its --limit applies per channel; truncated pages include next_before for use
 with `message list CHANNEL --before ID` and the same --since/--until window.
 New means published in the selected period, independent of read/unread status.
 
-Privacy boundary: only broadcast channels, comments attached to their posts and
-public groups (supergroups with a public @username) are readable. DMs, Saved
-Messages, bots, private groups and channel inboxes are rejected. `channel list`
-and `feed` cover broadcast channels only; read a public group by its username
-or t.me link with `message list/search/view`. Commands never send messages, join
-chats, or mark messages read.
+Privacy boundary: only broadcast channels, comments attached to their posts,
+public groups (supergroups with a public @username) and channel discussion groups
+(supergroups linked to a channel, with or without a username) are readable. DMs,
+Saved Messages, bots, other private groups and channel inboxes are rejected.
+`channel list` covers channels and joined readable groups; `feed` covers broadcast
+channels only. Commands never send messages, join chats, or mark messages read.
 Telegram's dialog listing includes private previews; these stay in memory and
 are neither printed nor saved to disk. Authorization is kept only in memory.
 The session itself still carries the account's full Telegram permissions.
@@ -74,6 +75,7 @@ class CLIError(Exception):
 
 class ChannelInfo(TypedDict):
     id: int
+    kind: str
     title: str
     username: str | None
     link: str | None
@@ -149,6 +151,15 @@ def parse_target(value: str) -> tuple[str | int, int | None]:
         if parts[0] == "s":
             parts = parts[1:]
 
+        if parts and (parts[0].startswith("+") or parts[0] == "joinchat"):
+            invite = parts[0][1:] if parts[0].startswith("+") else "/".join(parts[1:])
+            if len(parts) != (1 if parts[0].startswith("+") else 2) or not re.fullmatch(
+                r"[A-Za-z0-9_-]+", invite
+            ):
+                raise CLIError("Invalid invite link.")
+
+            return f"+{invite}", None
+
         if parts and parts[0] == "c":
             if len(parts) not in (2, 3) or not parts[1].isdigit() or int(parts[1]) < 1:
                 raise CLIError("Invalid private channel link.")
@@ -178,7 +189,9 @@ def parse_target(value: str) -> tuple[str | int, int | None]:
     if username.casefold() in ("me", "self") or not re.fullmatch(
         r"[A-Za-z][A-Za-z0-9_]{0,31}", username
     ):
-        raise CLIError("Only channel usernames, channel IDs and t.me channel links are allowed.")
+        raise CLIError(
+            "Only channel usernames, channel IDs, t.me channel links and invite links are allowed."
+        )
 
     return username, message_id
 
@@ -203,12 +216,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     feed.set_defaults(command="list", before=None)
 
     channels = groups.add_parser(
-        "channel", help="List broadcast channels or inspect a channel or public group."
+        "channel", help="List channels and readable groups or inspect one."
     ).add_subparsers(dest="command", required=True)
     channels.add_parser(
         "list",
         parents=[output],
-        help="List subscribed public and private channels, including archived ones.",
+        help="List subscribed channels and joined readable groups, including archived ones.",
     )
     channel_view = channels.add_parser(
         "view", parents=[output], help="Show a channel's description and metadata."
@@ -318,11 +331,27 @@ def is_public_group(entity: object) -> TypeGuard[types.Channel]:
     )
 
 
+def is_discussion_group(entity: object) -> TypeGuard[types.Channel]:
+    # On a supergroup, has_link means it is a channel's discussion group, whether
+    # it has a public username or is joined through an invite link.
+    return (
+        isinstance(entity, types.Channel)
+        and bool(entity.megagroup)
+        and not entity.broadcast
+        and not entity.monoforum
+        and bool(entity.has_link)
+    )
+
+
+def is_readable(entity: object) -> TypeGuard[types.Channel]:
+    return is_broadcast(entity) or is_public_group(entity) or is_discussion_group(entity)
+
+
 def require_broadcast(entity: object) -> types.Channel:
-    if not (is_broadcast(entity) or is_public_group(entity)):
+    if not is_readable(entity):
         raise CLIError(
-            "Access denied: only broadcast channels, their post comments and public groups"
-            " are allowed."
+            "Access denied: only broadcast channels, their post comments, public groups and"
+            " channel discussion groups are allowed."
         )
 
     return entity
@@ -332,6 +361,7 @@ def serialize_channel(channel: types.Channel) -> ChannelInfo:
     require_broadcast(channel)
     return {
         "id": utils.get_peer_id(channel),
+        "kind": "channel" if is_broadcast(channel) else "group",
         "title": channel.title,
         "username": channel.username,
         "link": f"https://t.me/{channel.username}" if channel.username else None,
@@ -339,14 +369,14 @@ def serialize_channel(channel: types.Channel) -> ChannelInfo:
 
 
 async def list_channels(
-    client: TelegramClient, since: datetime | None = None
+    client: TelegramClient, since: datetime | None = None, *, groups: bool = False
 ) -> list[types.Channel]:
     # getDialogs necessarily returns mixed previews. Never expose its messages,
     # drafts, users or raw objects, and never persist the client's entity cache.
     channels = []
     async for dialog in client.iter_dialogs(ignore_migrated=True):
         channel = dialog.entity
-        if not is_broadcast(channel) or channel.left:
+        if not (is_readable(channel) if groups else is_broadcast(channel)) or channel.left:
             continue
 
         if since and dialog.date and dialog.date < since:
@@ -359,11 +389,19 @@ async def list_channels(
 
 async def resolve_channel(client: TelegramClient, selector: str | int) -> types.Channel:
     if isinstance(selector, int):
-        for channel in await list_channels(client):
+        for channel in await list_channels(client, groups=True):
             if utils.get_peer_id(channel) == selector:
                 return require_broadcast(channel)
 
         raise CLIError("Channel ID not found among subscribed channels. Use `channel list`.")
+
+    if selector.startswith("+"):
+        # CheckChatInvite only previews the invite; it never joins the chat.
+        invite = await client(functions.messages.CheckChatInviteRequest(selector[1:]))
+        if not isinstance(invite, types.ChatInviteAlready):
+            raise CLIError("Not a member of this chat; join it in the Telegram app first.")
+
+        return require_broadcast(invite.chat)
 
     resolved = await client(functions.contacts.ResolveUsernameRequest(selector))
     if not isinstance(resolved.peer, types.PeerChannel):
@@ -644,12 +682,13 @@ def sanitize_text(value: str) -> str:
 
 def print_channels(channels: list[ChannelInfo]) -> None:
     table = Table(
-        title=f"Subscribed channels ({len(channels)})",
+        title=f"Subscribed channels and groups ({len(channels)})",
         title_justify="left",
         box=box.SIMPLE,
         header_style="bold",
     )
     table.add_column("Channel")
+    table.add_column("Kind", style="dim", no_wrap=True)
     table.add_column("Username", style="cyan", no_wrap=True)
     table.add_column("ID", style="dim", justify="right", no_wrap=True)
     for channel in channels:
@@ -658,7 +697,9 @@ def print_channels(channels: list[ChannelInfo]) -> None:
             if channel["username"]
             else Text("No username", style="dim")
         )
-        table.add_row(Text(sanitize_text(channel["title"])), username, str(channel["id"]))
+        table.add_row(
+            Text(sanitize_text(channel["title"])), channel["kind"], username, str(channel["id"])
+        )
 
     Console().print(table)
 
@@ -723,25 +764,28 @@ async def run_command(args: argparse.Namespace) -> Mapping[str, Any]:
             return {
                 "authorized": True,
                 "source": "Telegram for macOS",
-                "scope": "channels-post-comments-and-public-groups",
+                "scope": "channels-post-comments-public-and-discussion-groups",
             }
 
         if args.group == "feed":
             return await fetch_feed(client, since=args.since, until=args.until, limit=args.limit)
 
         if args.group == "channel" and args.command == "list":
-            return {
-                "channels": [serialize_channel(channel) for channel in await list_channels(client)]
-            }
+            channels = await list_channels(client, groups=True)
+            return {"channels": [serialize_channel(channel) for channel in channels]}
 
         channel = await resolve_channel(client, args.selector)
         if args.group == "channel":
             full = await client(functions.channels.GetFullChannelRequest(get_channel_peer(channel)))
+            linked = full.full_chat.linked_chat_id
             return {
                 "channel": {
                     **serialize_channel(channel),
                     "description": full.full_chat.about,
                     "subscribers": full.full_chat.participants_count,
+                    "linked_chat_id": utils.get_peer_id(types.PeerChannel(linked))
+                    if linked
+                    else None,
                 }
             }
 

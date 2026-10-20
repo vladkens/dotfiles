@@ -16,6 +16,8 @@ Prefix each command below with `uv run --script <skill-dir>/scripts/ds-messages.
 | Task                                         | Command                                                         |
 | -------------------------------------------- | --------------------------------------------------------------- |
 | Check authorization when troubleshooting     | `auth`                                                          |
+| List servers the account belongs to          | `servers`                                                       |
+| List a server's text channels with links     | `channels SERVER`                                               |
 | Read recent channel or thread messages       | `get 'https://discord.com/channels/SERVER/CHANNEL' --limit 100` |
 | Read a supplied direct or group conversation | `get 'https://discord.com/channels/@me/CHANNEL' --limit 100`    |
 
@@ -23,7 +25,7 @@ Use numeric server and channel IDs from a Discord link. For a thread, use its ow
 
 ## Workflow and coverage
 
-1. Use the supplied channel or conversation link directly. If only a name is given and no link is available in context, ask for the link; the CLI cannot list servers or discover channels by name.
+1. Use the supplied channel or conversation link directly. If only a server or channel name is given, find the server ID with `servers`, then the channel link with `channels SERVER` (tab-separated: link, kind, category, name; `announcement` marks announcement channels). The list can include channels the account cannot read; `get` reports those as inaccessible. Ask only when the match is ambiguous. Direct and group conversations cannot be listed; ask for their link.
 2. Run `get` with a limit appropriate to the request. The default is 100 messages, newest first; the CLI automatically paginates until it reaches the limit or exhausts accessible history. Increase `--limit` when more context is needed. There are no date filters, search endpoint, or saved pagination cursor; another call reads from the newest message again.
 3. For a topic search, inspect the fetched messages and report the channel and time range actually covered. Reaching the limit does not establish full historical coverage, and zero matches in that window does not mean the channel has no relevant messages.
 4. Answer in the conversation's language with authors, dates, and direct message links from the output. Keep quoted messages distinct from your interpretation and disclose incomplete coverage when it affects the answer.
@@ -34,7 +36,7 @@ Output is Markdown containing message text, timestamps, author names, available 
 
 ## Authorization and failures
 
-- The CLI only reads messages and checks authorization. It does not send messages, join servers, or mark messages read.
+- The CLI only reads messages, servers and channels, and checks authorization. It does not send messages, join servers, or mark messages read.
 - Let the CLI handle authorization. Do not read, print, copy, or persist the app's credentials yourself or request credentials in chat. Follow the normal approval flow if sandbox restrictions block local-session or network access.
 - If the local session is missing, unsupported, or ambiguous, report the error and ask the user to resolve it in Discord.app. Do not switch accounts or start a login flow yourself.
 - The CLI retries short rate limits internally and stops on longer or repeated limits. Report a remaining failure without retrying blindly; an inaccessible channel is not an empty channel.
