@@ -39,9 +39,9 @@ REPOS = {
     "nimbo": ["test"],
     "macmon": ["test"],  # from pull.yml
     "cctrail": ["test"],
-    "clankr": ["ubuntu-latest", "macos-latest"],  # matrix by OS
-    "unjar": ["test"],  # from pull.yml
-    "badgelib": ["test"],  # from pull.yml
+    "clankr": ["test"],
+    "unjar": ["test"],
+    "badgelib": ["test"],
     "twscrape": [],  # matrix
     "ghstats": ["build"],
     "apigen-ts": [],  # matrix
