@@ -20,7 +20,8 @@ What a set-up repo has:
 - Release tags vX.Y.Z: never deleted or moved (CI can still create them; `v1` can move).
 - Safety: Dependabot alerts about vulnerable dependencies (no PRs); secret scanning that also
   blocks pushes with secrets; a private way to report vulnerabilities; CI's token read-only
-  and unable to approve PRs; CI on an outsider's PR waits for your approval.
+  and unable to approve PRs. CI on fork PRs keeps GitHub's default: only a first-time
+  contributor's PR waits for your approval.
 """
 
 import json
@@ -35,8 +36,12 @@ OWNER = "vladkens"
 # (a matrix job is named per version, e.g. "test (3.12)", so leave those out).
 REPOS = {
     "wavo": ["test"],
+    "nimbo": ["test"],
     "macmon": ["test"],  # from pull.yml
     "cctrail": ["test"],
+    "clankr": ["ubuntu-latest", "macos-latest"],  # matrix by OS
+    "unjar": ["test"],  # from pull.yml
+    "badgelib": ["test"],  # from pull.yml
     "twscrape": [],  # matrix
     "ghstats": ["build"],
     "apigen-ts": [],  # matrix
@@ -230,14 +235,6 @@ class Repo:
             self.change(
                 onoff(True, "private vulnerability reports to you"),
                 lambda: api(f"repos/{self.full}/private-vulnerability-reporting", "PUT"),
-            )
-
-        fork_path = f"repos/{self.full}/actions/permissions/fork-pr-contributor-approval"
-        fork = api(fork_path, missing_ok=True)
-        if fork is not None and fork.get("approval_policy") != "all_external_contributors":
-            self.change(
-                "CI on any outsider's PR waits for your approval (now: first-time ones only)",
-                lambda: api(fork_path, "PUT", {"approval_policy": "all_external_contributors"}),
             )
 
         existing = {

@@ -134,6 +134,7 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
         "--remove", action="store_true", help="remove cached builds without running"
     )
     parser.add_argument("--bin", help="binary to run when the package installs several")
+    parser.add_argument("--example", help="run this example instead of a binary (a library's examples)")
     parser.add_argument("--package", help="package to install from a Cargo workspace")
     args = parser.parse_args(argv)
     args.url = None
@@ -146,8 +147,11 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*", args.repository):
         parser.error("repository must be owner/repo")
 
-    if args.remove and (args.bin or program_args):
-        parser.error("--remove cannot be combined with --bin or program arguments")
+    if args.remove and (args.bin or args.example or program_args):
+        parser.error("--remove cannot be combined with --bin, --example or program arguments")
+
+    if args.bin and args.example:
+        parser.error("--bin and --example are exclusive")
 
     if re.fullmatch(r"[1-9][0-9]*", args.branch):
         args.branch = f"pr-{args.branch}"
@@ -222,17 +226,21 @@ def prepare(args: argparse.Namespace, entry: Path) -> tuple[Path, dict]:
     if args.package:
         command.append(args.package)
 
+    if args.example:
+        command.append("--examples")
+
     try:
         build(command)
         binaries = sorted(path.name for path in (root / "bin").iterdir() if path.is_file())
         if not binaries:
-            raise ValueError("Cargo did not install any binaries")
+            raise ValueError("Cargo did not install any binaries; a library runs its examples with --example NAME")
 
         updated = {
             "cache_version": 2,
             "repository": args.repository,
             "branch": args.branch,
             "package": args.package,
+            "examples": args.example is not None,
             "commit": commit,
             "build": root.name,
             "binaries": binaries,
@@ -284,7 +292,7 @@ def main() -> None:
 
 
 def run(args: argparse.Namespace, program_args: list[str], cache: Path) -> None:
-    identity = json.dumps([args.repository, args.branch, args.package])
+    identity = json.dumps([args.repository, args.branch, args.package, args.example is not None])
     key = hashlib.sha256(identity.encode()).hexdigest()[:24]
     entry = cache / args.repository / key
     entry.mkdir(parents=True, exist_ok=True)
@@ -307,7 +315,7 @@ def run(args: argparse.Namespace, program_args: list[str], cache: Path) -> None:
         root, metadata = prepare(args, entry)
 
     binaries = metadata["binaries"]
-    binary = args.bin
+    binary = args.bin or args.example
     if binary is None:
         if len(binaries) != 1:
             raise ValueError(f"choose a binary with --bin: {', '.join(binaries)}")
