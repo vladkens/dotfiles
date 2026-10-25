@@ -15,8 +15,8 @@ What a set-up repo has:
 - Merging: squash only, the commit titled by the PR; the branch deleted after merge; an
   "Update branch" button on PRs.
 - main: changed only through PRs; no force-push, no deletion, nobody bypasses (you included);
-  every review thread resolved before merge; Copilot reviews each push; the CI jobs in REPOS
-  green before merge.
+  every review thread resolved before merge; the CI jobs in REPOS green before merge; no
+  Copilot review (it bills the Copilot seat).
 - Release tags vX.Y.Z: never deleted or moved (CI can still create them; `v1` can move).
 - Safety: Dependabot alerts about vulnerable dependencies (no PRs); secret scanning that also
   blocks pushes with secrets; a private way to report vulnerabilities; CI's token read-only
@@ -36,6 +36,7 @@ OWNER = "vladkens"
 # (a matrix job is named per version, e.g. "test (3.12)", so leave those out).
 REPOS = {
     "wavo": ["test"],
+    "wavo-app": ["test"],
     "nimbo": ["test"],
     "macmon": ["test"],  # from pull.yml
     "cctrail": ["test"],
@@ -70,8 +71,6 @@ RULE_WORDS = {
     "required_review_thread_resolution": "review threads resolved before merge",
     "allowed_merge_methods": "allowed merge methods",
     "required_approving_review_count": "required approvals",
-    "review_on_push": "Copilot review on each push",
-    "review_draft_pull_requests": "Copilot review of drafts",
     "required_status_checks": "required CI jobs",
 }
 
@@ -90,10 +89,6 @@ def main_rules(checks: list[str]) -> dict:
                 "required_review_thread_resolution": True,
                 "allowed_merge_methods": ["squash"],
             },
-        },
-        {
-            "type": "copilot_code_review",
-            "parameters": {"review_on_push": True, "review_draft_pull_requests": False},
         },
     ]
     if checks:
@@ -244,8 +239,7 @@ class Repo:
         self.plan_ruleset(
             existing.pop("main", None),
             main,
-            "add rule for main: PRs only (squash), no force-push or deletion, threads resolved, "
-            + "Copilot review"
+            "add rule for main: PRs only (squash), no force-push or deletion, threads resolved"
             + (f", CI jobs {', '.join(self.checks)} green" if self.checks else ""),
         )
         self.plan_ruleset(

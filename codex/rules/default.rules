@@ -37,7 +37,7 @@ prefix_rule(pattern=["gh", "search", ["code", "issues", "prs", "repos"]], decisi
 prefix_rule(pattern=["gh", "workflow", ["list", "view"]], decision="allow")
 
 # Cargo
-prefix_rule(pattern=["cargo", ["check", "clippy", "fmt"]], decision="allow")
+prefix_rule(pattern=["cargo", ["build", "check", "clippy", "fmt"]], decision="allow")
 prefix_rule(pattern=["cargo", "+nightly", ["check", "clippy", "fmt"]], decision="allow")
 prefix_rule(pattern=["cargo", "test"], decision="allow")
 prefix_rule(pattern=["cargo", "deny", "check"], decision="allow")

@@ -39,19 +39,16 @@
             "type": "command",
             "command": "jq -c '.tool_input as $input | (.cwd // \"\") as $cwd | \"^[ \\t]*git[ \\t]+-C[ \\t]+(?<path>[^[:space:]]+)\" as $pattern | (try ($input.command | capture($pattern)) catch {}) | select((.path // \"\") as $path | $path == \".\" or $path == \"./\" or ($path | rtrimstr(\"/\")) == ($cwd | rtrimstr(\"/\"))) | {hookSpecificOutput:{hookEventName:\"PreToolUse\",updatedInput:($input | .command |= sub($pattern; \"git\"))}}'",
             "if": "Bash(git -C *)"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
+          },
           {
             "type": "command",
-            "command": "~/.local/bin/claude-pr-watch",
-            "asyncRewake": true,
-            "timeout": 3600
+            "command": "~/.local/bin/pr-gate --hook",
+            "if": "Bash(git push*)"
+          },
+          {
+            "type": "command",
+            "command": "~/.local/bin/pr-gate --hook",
+            "if": "Bash(git -C * push*)"
           }
         ]
       }

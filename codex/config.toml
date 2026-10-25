@@ -40,6 +40,7 @@ extends = ":workspace"
 "~/.cargo/.package-cache" = "write"
 "~/.cargo/git" = "write"
 "~/.cargo/registry" = "write"
+"~/Library/Caches/Mozilla.sccache" = "write"
 "~/Library/Caches/pnpm" = "write"
 "~/Library/pnpm/store" = "write"
 

@@ -1,0 +1,442 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = []
+# ///
+"""A review gate for pushes in github.com/vladkens/* repositories.
+
+  pr-gate                    review what changed since the last review, as much as it needs
+  pr-gate --accept REASON …  reject the open findings, one reason per finding
+  pr-gate --hook             Claude Code PreToolUse hook on `git push`: denies the push until
+                             pr-gate has passed the branch's current changes
+
+What counts is the branch's own code changes against the default branch: the changed lines of
+code files, without docs, lockfiles, tests, assets and whitespace. They are compared as a set of
+lines, so a rebase that keeps them doesn't count as a change. Nothing changed since the last
+review: no review. A lot of new code in the branch: /simplify first, once. Otherwise a quick
+Codex review of the delta (low effort) answers OK, FIX or DEEP. A deep review of the whole branch
+(high effort) runs instead when the quick one says DEEP, the delta touches a risky path or adds
+`unsafe`, or the code changed since the last deep review passed DEEP_LINES; at most DEEP_MAX per
+branch. A review that can't run blocks, for the person to look at. State is kept per branch in
+<git common dir>/pr-gate/.
+"""
+
+import argparse
+import hashlib
+import json
+import re
+import subprocess
+import sys
+import tempfile
+from collections import Counter
+from dataclasses import dataclass
+from fnmatch import fnmatchcase
+from pathlib import Path
+from urllib.parse import quote
+
+OWNER = re.compile(r"github\.com[:/]vladkens/")
+EXEMPT = (
+    "*.md", "*.markdown", "*.rst", "*.txt", "LICENSE*", "docs/*", "*.lock", "package-lock.json",
+    "pnpm-lock.yaml", "yarn.lock", "go.sum", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg",
+    "*.webp", "*.ico",
+)
+TESTS = (
+    "tests/*", "test/*", "tests.rs", "*_test.*", "*_tests.*", "*.test.*", "*.spec.*", "test_*",
+)
+RISKY = (
+    "*migrat*", "auth/*", "auth.*", "*oauth*", "*secret*", "*credential*", "*crypto*",
+    "*password*", ".github/workflows/*", "build.rs",
+)
+SIMPLIFY_LINES = 300  # added code lines in the branch, mostly new rather than rewritten
+DEEP_LINES = 400  # code lines changed since the last deep review
+DEEP_MAX = 2
+TIMEOUT = {"low": 5 * 60, "high": 9 * 60}  # below the 10 minutes an agent's command can run
+
+QUICK = """Quick review of a change. See it with: {diff}
+Look only for real defects the change brings: bugs, wrong logic, unhandled errors, security
+holes, data loss, races. Skip style, naming and nitpicks. Be brief.
+{rejected}
+List each finding as `- path:line: problem`. Then end with exactly one of these lines:
+VERDICT: OK
+VERDICT: FIX
+VERDICT: DEEP <why>
+OK when nothing is found. FIX when the findings above can each be fixed from what the diff
+shows. DEEP when the change can't be judged from this diff alone: it relies on code elsewhere,
+concurrency, data formats or a public API. If the change adds complexity it doesn't need, put a
+line `COMPLEX: <why>` before the verdict."""
+
+DEEP = """Thorough review of this branch's whole change. See it with: {diff}
+Read the surrounding code as needed. Why it is reviewed in depth: {why}.
+Look for real defects: bugs, wrong logic, invariants broken across files, unhandled errors,
+security holes, data loss, races, broken APIs. Skip style and nitpicks.
+{rejected}
+List each finding as `- path:line: problem`. End with exactly one line: `VERDICT: OK` when
+nothing is found, else `VERDICT: FIX`."""
+
+
+def git(*args: str, cwd: str | Path | None = None) -> str:
+    rs = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    if rs.returncode:
+        raise RuntimeError(f"git {' '.join(args)}: {rs.stderr.strip()}")
+
+    return rs.stdout.strip()
+
+
+def matches(path: str, globs: tuple[str, ...]) -> bool:
+    return any(fnmatchcase("/" + path, "*/" + g) for g in globs)
+
+
+def fingerprint(changes: Counter) -> str:
+    return hashlib.sha256(json.dumps(sorted(changes.items())).encode()).hexdigest()[:16]
+
+
+def drift(a: Counter, b: Counter) -> Counter:
+    """Changed lines in one set and not the other."""
+    return (a - b) + (b - a)
+
+
+def size(changes: Counter) -> int:
+    return sum(changes.values())
+
+
+@dataclass
+class Repo:
+    top: Path
+    branch: str
+    default: str  # origin/main
+    head: str
+    base: str  # merge base with the default branch
+    state_file: Path
+    st: dict
+
+    @classmethod
+    def open(cls, cwd: str | Path, fetch: bool = False) -> "Repo | None":
+        """The repository at cwd when the gate applies to it: ours, on a branch, not the default."""
+        top = Path(git("rev-parse", "--show-toplevel", cwd=cwd))
+        try:
+            origin = git("config", "--get", "remote.origin.url", cwd=top)
+        except RuntimeError:
+            return None
+
+        branch = git("branch", "--show-current", cwd=top)
+        try:
+            default = git("rev-parse", "--abbrev-ref", "origin/HEAD", cwd=top)
+        except RuntimeError:
+            default = "origin/main"
+
+        if not OWNER.search(origin) or branch in ("", default.removeprefix("origin/")):
+            return None
+
+        if fetch:
+            name = default.removeprefix("origin/")
+            subprocess.run(["git", "fetch", "-q", "origin", name], cwd=top, capture_output=True)
+
+        common = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=top))
+        state_file = common / "pr-gate" / f"{quote(branch, safe='')}.json"
+        st = json.loads(state_file.read_text()) if state_file.exists() else {}
+        return cls(
+            top=top,
+            branch=branch,
+            default=default,
+            head=git("rev-parse", "HEAD", cwd=top),
+            base=git("merge-base", default, "HEAD", cwd=top),
+            state_file=state_file,
+            st=st,
+        )
+
+    def save(self) -> None:
+        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        self.state_file.write_text(json.dumps(self.st, indent=2) + "\n")
+
+    def snapshot(self) -> dict:
+        return {"commit": self.head, "base": self.base}
+
+    def exists(self, commit: str) -> bool:
+        args = ["git", "cat-file", "-e", f"{commit}^{{commit}}"]
+        return subprocess.run(args, cwd=self.top, capture_output=True).returncode == 0
+
+    def changes(self, snap: dict | None = None) -> Counter:
+        """The branch's own code changes at a snapshot (now when None), as counted lines."""
+        base, head = (snap["base"], snap["commit"]) if snap else (self.base, self.head)
+        if snap and not (self.exists(base) and self.exists(head)):
+            return Counter()
+
+        out = git(
+            "diff", "-U0", "--no-renames", "--no-color", "--ignore-all-space",
+            "--ignore-blank-lines", base, head, cwd=self.top,
+        )
+        rs, path = Counter(), None
+        for line in out.splitlines():
+            if line.startswith("+++ "):
+                path = line[6:] if line != "+++ /dev/null" else path
+            elif line.startswith("--- "):
+                path = line[6:] if line != "--- /dev/null" else None
+            elif line.startswith(("+", "-")) and path and not matches(path, EXEMPT + TESTS):
+                rs[(path, line)] += 1
+
+        return rs
+
+    def since(self, key: str, cur: Counter) -> Counter:
+        """What changed since the snapshot under key; everything when there is none."""
+        snap = self.st.get(key)
+        return drift(cur, self.changes(snap)) if snap else cur
+
+    def rejected(self) -> str:
+        items = self.st.get("rejected", [])
+        if not items:
+            return ""
+
+        lines = "\n".join(f"- {x}" for x in items[-10:])
+        return f"The author already rejected these findings; don't repeat them:\n{lines}\n"
+
+
+def codex(repo: Repo, prompt: str, effort: str) -> tuple[str | None, str]:
+    """The review's last message, or None and why it couldn't run."""
+    with tempfile.NamedTemporaryFile(suffix=".md") as out:
+        cmd = [
+            "codex", "exec", "-C", str(repo.top), "-s", "read-only", "--ephemeral",
+            "-c", f"model_reasoning_effort={effort}", "-o", out.name, prompt,
+        ]
+        try:
+            rs = subprocess.run(
+                cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                timeout=TIMEOUT[effort],
+            )
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return None, str(e)
+
+        if rs.returncode:
+            tail = "\n".join(rs.stderr.strip().splitlines()[-5:])
+            return None, f"codex exited with {rs.returncode}:\n{tail}"
+
+        return Path(out.name).read_text().strip(), ""
+
+
+def verdict(text: str) -> tuple[str, str] | None:
+    found = re.findall(r"^\W*VERDICT:\s*(OK|FIX|DEEP)\b\W*(.*)$", text, re.MULTILINE)
+    return found[-1] if found else None
+
+
+def findings(text: str) -> int:
+    return len(re.findall(r"^\s*[-*]\s+`?\S+:\d+", text, re.MULTILINE))
+
+
+# MARK: Outcomes
+
+
+def passed(repo: Repo, fp: str, why: str) -> int:
+    repo.st["passed"] = [*repo.st.get("passed", []), fp][-50:]
+    repo.st["last"] = repo.snapshot()
+    repo.st.pop("open", None)
+    repo.save()
+    print(f"pr-gate: passed ({why}). Push again.")
+    return 0
+
+
+def fix(repo: Repo, fp: str, text: str, simplify: bool) -> int:
+    repo.st["last"] = repo.snapshot()
+    repo.st["open"] = {"fp": fp, "findings": text}
+    repo.save()
+    return open_findings(repo, simplify)
+
+
+def open_findings(repo: Repo, simplify: bool = False) -> int:
+    print(repo.st["open"]["findings"])
+    print(
+        "\npr-gate: findings to handle. Check each one against the code. Fix the real ones,"
+        " commit and run pr-gate again; that review covers only your fixes. To reject findings"
+        " without changing code, give one reason per finding:"
+        " `pr-gate --accept '<finding>: <why it is wrong>' --accept '…'`."
+    )
+    if simplify:
+        print("Before that, run /simplify on the branch's changes and commit what it changes.")
+
+    return 1
+
+
+def broken(why: str) -> int:
+    print(
+        f"pr-gate: the review couldn't run: {why}\nThe push stays blocked. Tell the person;"
+        " don't work around it.",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def review(repo: Repo) -> int:
+    if git("status", "--porcelain", "--untracked-files=no", cwd=repo.top):
+        print("pr-gate: uncommitted changes are not reviewed; commit them first.", file=sys.stderr)
+
+    cur = repo.changes()
+    fp = fingerprint(cur)
+    if fp in repo.st.get("passed", []):
+        print("pr-gate: these changes have passed already. Push again.")
+        return 0
+
+    if repo.st.get("open", {}).get("fp") == fp:
+        return open_findings(repo)
+
+    delta = repo.since("last", cur)
+    if not delta:
+        return passed(repo, fp, "no code changed since the last review")
+
+    added = sum(n for (_, line), n in cur.items() if line.startswith("+"))
+    deleted = size(cur) - added
+    if not repo.st.get("simplify") and added > SIMPLIFY_LINES and added > 3 * deleted:
+        repo.st["simplify"] = True
+        repo.save()
+        print(
+            f"pr-gate: this branch adds {added} lines of new code. Run /simplify on its changes,"
+            " commit what it changes, then run pr-gate again."
+        )
+        return 1
+
+    files = sorted({path for path, _ in delta})
+    why = [f"touches {x}" for x in files if matches(x, RISKY)]
+    why += [f"adds unsafe in {p}" for p, x in delta if x.startswith("+") and "unsafe" in x][:1]
+    since_deep = size(repo.since("deep_at", cur))
+    if since_deep > DEEP_LINES:
+        why.append(f"{since_deep} lines of code changed since the last deep review")
+
+    simplify = False
+    if not why:
+        # After a rebase the last reviewed commit isn't an ancestor: show the delta's files whole.
+        last = repo.st.get("last")
+        on_top = last and repo.exists(last["commit"]) and subprocess.run(
+            ["git", "merge-base", "--is-ancestor", last["commit"], "HEAD"], cwd=repo.top
+        ).returncode == 0
+        rng = f"{last['commit']} HEAD" if on_top else f"{repo.default}...HEAD"
+        diff = f"git diff {rng} -- {' '.join(files)}"
+        print(f"pr-gate: quick review of {size(delta)} changed lines…", file=sys.stderr)
+        text, err = codex(repo, QUICK.format(diff=diff, rejected=repo.rejected()), "low")
+        found = text and verdict(text)
+        if not found:
+            return broken(err or f"no verdict in the quick review:\n{text}")
+
+        complex_ = re.search(r"^\W*COMPLEX:", text, re.MULTILINE)
+        simplify = bool(complex_) and not repo.st.get("simplify")
+        repo.st["simplify"] = repo.st.get("simplify") or simplify
+        match found:
+            case ("OK", _) if simplify:
+                return fix(repo, fp, text, simplify)
+            case ("OK", _):
+                return passed(repo, fp, "quick review found nothing")
+            case ("FIX", _):
+                return fix(repo, fp, text, simplify)
+            case ("DEEP", reason):
+                why.append(f"the quick review asked for it: {reason or 'no reason given'}")
+
+    if repo.st.get("deep", 0) >= DEEP_MAX:
+        print(
+            f"pr-gate: a deep review is due ({'; '.join(why)}), but this branch had {DEEP_MAX}"
+            " already. Tell the person instead of starting another."
+        )
+        return passed(repo, fp, "deep review limit reached")
+
+    print(f"pr-gate: deep review of the branch ({'; '.join(why)})…", file=sys.stderr)
+    diff = f"git diff {repo.default}...HEAD"
+    prompt = DEEP.format(diff=diff, why="; ".join(why), rejected=repo.rejected())
+    text, err = codex(repo, prompt, "high")
+    found = text and verdict(text)
+    if not found:
+        return broken(err or f"no verdict in the deep review:\n{text}")
+
+    repo.st["deep"] = repo.st.get("deep", 0) + 1
+    repo.st["deep_at"] = repo.snapshot()
+    if found[0] == "OK":
+        return passed(repo, fp, "deep review found nothing")
+
+    return fix(repo, fp, text, simplify)
+
+
+def accept(repo: Repo, reasons: list[str]) -> int:
+    fp = fingerprint(repo.changes())
+    if fp in repo.st.get("passed", []):
+        print("pr-gate: these changes have passed already.")
+        return 0
+
+    item = repo.st.get("open", {})
+    if item.get("fp") != fp:
+        print("pr-gate: no findings are open for these changes; run pr-gate.", file=sys.stderr)
+        return 1
+
+    need = max(1, findings(item["findings"]))
+    if len(reasons) < need:
+        print(
+            f"pr-gate: {need} findings are open; give a reason for each (--accept per finding),"
+            " or fix them and run pr-gate again.",
+            file=sys.stderr,
+        )
+        return 1
+
+    repo.st["rejected"] = [*repo.st.get("rejected", []), *reasons][-20:]
+    return passed(repo, fp, "findings rejected")
+
+
+def hook() -> int:
+    """Denies a `git push` of a branch whose changes pr-gate hasn't passed. Fails open on its
+    own errors, so a broken gate doesn't stop the work."""
+    try:
+        pld = json.load(sys.stdin)
+        cmd = pld["tool_input"]["command"]
+        if re.search(r"\s(--delete|-d|--tags)\b", cmd):
+            return 0
+
+        # `cd <dir> && git push` and `git -C <dir> push` push another repository than cwd's.
+        cwd = Path(pld.get("cwd") or ".")
+        before = cmd[: cmd.find("git push")] if "git push" in cmd else cmd
+        for d in re.findall(r"(?:^|[;&|(]\s*)cd\s+([^\s;&|]+)", before):
+            cwd = cwd / Path(d.strip("'\"")).expanduser()
+
+        m = re.search(r"\bgit\s+-C\s+(\S+)\s+push\b", cmd)
+        if m:
+            cwd = cwd / Path(m[1].strip("'\"")).expanduser()
+
+        repo = Repo.open(cwd)
+        if repo is None:
+            return 0
+
+        cur = repo.changes()
+        if not cur or fingerprint(cur) in repo.st.get("passed", []):
+            return 0
+    except Exception as e:
+        print(f"pr-gate: hook error, not blocking: {e}", file=sys.stderr)
+        return 0
+
+    reason = (
+        f"pr-gate: this push needs a review first. Run `pr-gate` in {repo.top} with a 10-minute"
+        " timeout, do what it says, then push again."
+    )
+    out = {"hookEventName": "PreToolUse", "permissionDecision": "deny"}
+    print(json.dumps({"hookSpecificOutput": {**out, "permissionDecisionReason": reason}}))
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__.splitlines()[0],
+        epilog="Thresholds: simplify over {}, deep over {} lines, at most {} deep reviews.".format(
+            SIMPLIFY_LINES, DEEP_LINES, DEEP_MAX
+        ),
+    )
+    parser.add_argument(
+        "--accept", metavar="REASON", action="append", help="reject one open finding with a reason"
+    )
+    parser.add_argument("--hook", action="store_true", help="run as the Claude Code push hook")
+    args = parser.parse_args()
+    if args.hook:
+        return hook()
+
+    repo = Repo.open(Path.cwd(), fetch=True)
+    if repo is None:
+        print("pr-gate: nothing to gate here (not a github.com/vladkens branch).")
+        return 0
+
+    if args.accept:
+        return accept(repo, args.accept)
+
+    return review(repo)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
