@@ -300,6 +300,113 @@ class SwitchTest(Home):
         with mock.patch.object(sw.time, "time", return_value=1300):
             self.assertIsNone(self.measure(FULL))
 
+    def test_rate_limits_back_off_silently_across_calls_without_switching(self):
+        self.log_in(SW, "sw")
+        before = {"personal": 50_000}
+        sw.STATE.write_text(json.dumps({"full": before}))
+        now = 1000
+        for delay in (300, 450, 675, 1012.5, 1518.75, 1800, 1800):
+            with (
+                mock.patch.object(sw.time, "time", return_value=now),
+                mock.patch.object(
+                    sw, "oauth_get", side_effect=sw.UsageUnavailable("HTTP 429", rate_limited=True)
+                ) as request,
+                mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
+                mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+            ):
+                self.assertEqual(self.measure(FULL), sw.RETRY)
+
+            request.assert_called_once()
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertEqual(stderr.getvalue(), "")
+            state = json.loads(sw.STATE.read_text())
+            self.assertEqual(state["usageRetryAt"], now + delay)
+            self.assertEqual(state["full"], before)
+            self.assertEqual(self.live_account(), SW)
+
+            # Another session waking just before the deadline must not request or grow backoff.
+            with (
+                mock.patch.object(sw.time, "time", return_value=now + delay - 1),
+                mock.patch.object(sw, "oauth_get") as request,
+            ):
+                self.assertEqual(self.measure(FULL), sw.RETRY)
+                request.assert_not_called()
+
+            self.assertEqual(json.loads(sw.STATE.read_text()), state)
+            now += delay
+
+    def test_rate_limit_respects_a_server_delay_longer_than_the_backoff_cap(self):
+        self.log_in(SW, "sw")
+        sw.STATE.write_text(json.dumps({"usageBackoff": 1518.75}))
+        with (
+            mock.patch.object(sw.time, "time", return_value=1000),
+            mock.patch.object(
+                sw,
+                "oauth_get",
+                side_effect=sw.UsageUnavailable("HTTP 429", 3600, rate_limited=True),
+            ),
+        ):
+            self.assertEqual(self.measure(FULL), sw.RETRY)
+
+        state = json.loads(sw.STATE.read_text())
+        self.assertEqual(state["usageRetryAt"], 4600)
+        self.assertEqual(state["usageBackoff"], 1800)
+
+    def test_success_clears_rate_limit_backoff_and_error(self):
+        self.log_in(SW, "sw")
+        sw.STATE.write_text(json.dumps({"usageBackoff": 1800, "usageError": "HTTP 429"}))
+        with mock.patch.object(sw.time, "time", return_value=1000):
+            self.assertIsNone(self.measure(LOW))
+
+        state = json.loads(sw.STATE.read_text())
+        self.assertNotIn("usageBackoff", state)
+        self.assertNotIn("usageError", state)
+        self.assertEqual(state["usageRetryAt"], 1060)
+
+        with (
+            mock.patch.object(sw.time, "time", return_value=1060),
+            mock.patch.object(
+                sw, "oauth_get", side_effect=sw.UsageUnavailable("HTTP 429", rate_limited=True)
+            ),
+        ):
+            self.assertEqual(self.measure(LOW), sw.RETRY)
+
+        self.assertEqual(json.loads(sw.STATE.read_text())["usageRetryAt"], 1360)
+
+    def test_other_usage_errors_remain_visible_without_growing_backoff(self):
+        self.log_in(SW, "sw")
+        with (
+            mock.patch.object(sw.time, "time", return_value=1000),
+            mock.patch.object(sw, "oauth_get", side_effect=sw.UsageUnavailable("HTTP 401")),
+            mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+        ):
+            self.assertEqual(self.measure(LOW), sw.RETRY)
+
+        self.assertEqual(stderr.getvalue(), "HTTP 401\n")
+        state = json.loads(sw.STATE.read_text())
+        self.assertNotIn("usageBackoff", state)
+        self.assertEqual(state["usageRetryAt"], 1060)
+
+    def test_status_shows_silent_rate_limit_and_when_it_can_retry(self):
+        self.log_in(SW, "sw")
+        with (
+            mock.patch.object(sw.time, "time", return_value=1000),
+            mock.patch.object(
+                sw, "oauth_get", side_effect=sw.UsageUnavailable("HTTP 429", rate_limited=True)
+            ),
+        ):
+            self.assertEqual(self.measure(LOW), sw.RETRY)
+
+        for now, expected in ((1001, "Next attempt after"), (1300, "Retry pending")):
+            with (
+                mock.patch.object(sw.time, "time", return_value=now),
+                mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
+            ):
+                sw.cmd_status(None)
+
+            self.assertIn("HTTP 429", stdout.getvalue())
+            self.assertIn(expected, stdout.getvalue())
+
     def test_verified_profile_is_reused_only_for_the_same_token(self):
         self.log_in(SW, "sw")
         state = {}
@@ -416,20 +523,23 @@ class UsageTest(unittest.TestCase):
         self.assertEqual(request.get_header("Anthropic-beta"), "oauth-2025-04-20")
         self.assertEqual(opener.open.call_args.kwargs["timeout"], 5)
 
-    def test_rate_limit_retry_after_is_preserved(self):
-        error = HTTPError(
-            "https://api.anthropic.com", 429, "throttled", {"Retry-After": "600"}, None
-        )
-        opener = mock.Mock()
-        opener.open.side_effect = error
-        with (
-            mock.patch.object(sw, "build_opener", return_value=opener),
-            self.assertRaises(sw.UsageUnavailable) as raised,
-        ):
-            sw.oauth_get("usage", "secret")
+    def test_http_errors_preserve_retry_after_and_identify_rate_limits(self):
+        for code, delay in ((429, 600), (403, 600), (401, 60), (500, 60)):
+            error = HTTPError(
+                "https://api.anthropic.com", code, "failed", {"Retry-After": "600"}, None
+            )
+            opener = mock.Mock()
+            opener.open.side_effect = error
+            with (
+                self.subTest(code=code),
+                mock.patch.object(sw, "build_opener", return_value=opener),
+                self.assertRaises(sw.UsageUnavailable) as raised,
+            ):
+                sw.oauth_get("usage", "secret")
 
-        self.assertEqual(raised.exception.retry_after, 600)
-        self.assertNotIn("secret", str(raised.exception))
+            self.assertEqual(raised.exception.retry_after, delay)
+            self.assertEqual(raised.exception.rate_limited, code == 429)
+            self.assertNotIn("secret", str(raised.exception))
 
     def test_retry_after_supports_seconds_dates_and_invalid_values(self):
         self.assertEqual(sw.retry_delay("120", 0), 120)

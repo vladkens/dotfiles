@@ -48,6 +48,9 @@ SETTLE = 60  # seconds after a switch when sessions may still report the previou
 LOCK_WAIT = 20  # seconds to wait for all of Claude Code's locks together
 RETRY = 75  # a hint has not been handled; the mod must retry even if its numbers stay the same
 POLL_INTERVAL = 60  # shared by all sessions, including after a failed request
+BACKOFF_INITIAL = 300  # seconds after the first HTTP 429
+BACKOFF_FACTOR = 1.5
+BACKOFF_MAX = 30 * 60  # a longer Retry-After still takes precedence
 
 CLAUDE_DIR = Path.home() / ".claude"
 CONFIG = Path.home() / ".claude.json"
@@ -321,9 +324,12 @@ def full_until(blocked: dict | float) -> float:
 
 
 class UsageUnavailable(Exception):
-    def __init__(self, message: str, retry_after: float = POLL_INTERVAL):
+    def __init__(
+        self, message: str, retry_after: float = POLL_INTERVAL, *, rate_limited: bool = False
+    ):
         super().__init__(message)
         self.retry_after = retry_after
+        self.rate_limited = rate_limited
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -343,9 +349,9 @@ def retry_delay(value: str | None, now: float) -> float:
         try:
             delay = parsedate_to_datetime(value).timestamp() - now
         except (TypeError, ValueError, OverflowError):
-            return 300
+            return BACKOFF_INITIAL
 
-    return max(POLL_INTERVAL, delay) if math.isfinite(delay) else 300
+    return max(POLL_INTERVAL, delay) if math.isfinite(delay) else BACKOFF_INITIAL
 
 
 def oauth_get(path: str, token: str) -> dict:
@@ -368,7 +374,11 @@ def oauth_get(path: str, token: str) -> dict:
             if error.code in (429, 403)
             else POLL_INTERVAL
         )
-        raise UsageUnavailable(f"Account usage check failed (HTTP {error.code}); will retry", delay)
+        raise UsageUnavailable(
+            f"Account usage check failed (HTTP {error.code}); will retry",
+            delay,
+            rate_limited=error.code == 429,
+        )
     except (URLError, OSError, ValueError):
         raise UsageUnavailable("Account usage check unavailable; will retry") from None
 
@@ -481,7 +491,8 @@ def cmd_use(args: argparse.Namespace) -> None:
 def cmd_status(args: argparse.Namespace) -> None:
     saved = saved_accounts()
     live = owner(saved, config_account())
-    full = json.loads(STATE.read_text()).get("full", {}) if STATE.exists() else {}
+    state = json.loads(STATE.read_text()) if STATE.exists() else {}
+    full = state.get("full", {})
     for name in PRIORITY:
         if name not in saved:
             print(f"  {name}: not saved")
@@ -495,6 +506,14 @@ def cmd_status(args: argparse.Namespace) -> None:
             else ""
         )
         print(f"{'*' if name == live else ' '} {name}: {email}{note}")
+
+    if state.get("usageError"):
+        print(state["usageError"])
+        retry_at = state.get("usageRetryAt", 0)
+        if retry_at > time.time():
+            print(f"  Next attempt after {datetime.fromtimestamp(retry_at):%H:%M %d.%m}")
+        else:
+            print("  Retry pending")
 
 
 def cmd_measure(args: argparse.Namespace) -> int | None:
@@ -527,8 +546,19 @@ def cmd_measure(args: argparse.Namespace) -> int | None:
         try:
             limits = verified_usage(account, token, state)
         except UsageUnavailable as error:
-            state["usageRetryAt"] = time.time() + error.retry_after
-            print(str(error), file=sys.stderr)
+            delay = error.retry_after
+            if error.rate_limited:
+                # Persist across sessions; only our backoff is capped, never Retry-After.
+                state["usageBackoff"] = min(
+                    BACKOFF_MAX,
+                    max(BACKOFF_INITIAL, state.get("usageBackoff", 0) * BACKOFF_FACTOR),
+                )
+                delay = max(delay, state["usageBackoff"])
+            else:
+                print(str(error), file=sys.stderr)
+
+            state["usageError"] = str(error)
+            state["usageRetryAt"] = time.time() + delay
             return RETRY
 
         # /login and token refresh can run while the network request is in flight.
@@ -538,6 +568,9 @@ def cmd_measure(args: argparse.Namespace) -> int | None:
 
         if not same_account(live, account) or live_token != token:
             return RETRY
+
+        state.pop("usageBackoff", None)
+        state.pop("usageError", None)
 
         target = pick(current, limits, list(saved), state.setdefault("full", {}), time.time())
         if target != current:
