@@ -35,6 +35,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 OWNER = re.compile(r"github\.com[:/]vladkens/")
+# `git push` as a command (not in a quoted message), also with `-C <dir>` or `-c <key=value>`.
+PUSH = re.compile(r"(?:^|[;&|(\n])\s*git((?:\s+-[Cc]\s+\S+)*)\s+push\b")
 EXEMPT = (
     "*.md", "*.markdown", "*.rst", "*.txt", "LICENSE*", "docs/*", "*.lock", "package-lock.json",
     "pnpm-lock.yaml", "yarn.lock", "go.sum", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg",
@@ -379,18 +381,19 @@ def hook() -> int:
     try:
         pld = json.load(sys.stdin)
         cmd = pld["tool_input"]["command"]
-        if re.search(r"\s(--delete|-d|--tags)\b", cmd):
+        # Claude Code runs the hook for compound commands its `if` can't parse (redirects,
+        # `$(…)`): no push in them, nothing to gate.
+        push = PUSH.search(cmd)
+        if push is None or re.search(r"\s(--delete|-d|--tags)\b", cmd):
             return 0
 
         # `cd <dir> && git push` and `git -C <dir> push` push another repository than cwd's.
         cwd = Path(pld.get("cwd") or ".")
-        before = cmd[: cmd.find("git push")] if "git push" in cmd else cmd
-        for d in re.findall(r"(?:^|[;&|(]\s*)cd\s+([^\s;&|]+)", before):
+        for d in re.findall(r"(?:^|[;&|(]\s*)cd\s+([^\s;&|]+)", cmd[: push.start()]):
             cwd = cwd / Path(d.strip("'\"")).expanduser()
 
-        m = re.search(r"\bgit\s+-C\s+(\S+)\s+push\b", cmd)
-        if m:
-            cwd = cwd / Path(m[1].strip("'\"")).expanduser()
+        for d in re.findall(r"-C\s+(\S+)", push[1]):
+            cwd = cwd / Path(d.strip("'\"")).expanduser()
 
         repo = Repo.open(cwd)
         if repo is None:

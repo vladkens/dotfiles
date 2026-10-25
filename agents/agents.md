@@ -12,6 +12,10 @@
 - Keep each Markdown paragraph on one physical line.
 - Makefiles: line 1 is `.PHONY:` with the base targets that exist, in this order: `prepare` (format, autofix), `check` (read-only lint and type checks), `test`, `build`, `update` (dependencies), `clean`; they follow in that order after the shared variables. Project targets come after them under their own `.PHONY:`, each with a short `# what it does`; a target longer than a line or two calls a script.
 
+## Apps
+
+- An app never shows a window, popup, alert or dialog by itself and never takes the focus from the window the user works in: not on a hotkey, not on an error, not at launch. Errors and missing permissions go to the app's own quiet status (its HUD, its menu bar icon and menu, the log). A window opens only when the user asks for it (a menu item, a button, opening the app).
+
 ## Packages
 
 - A placeholder that reserves a name on a registry (crates.io, PyPI, npm) is version `0.0.0`. A publish can't be undone: check the version before every one.
