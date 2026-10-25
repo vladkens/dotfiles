@@ -25,6 +25,15 @@ description: Apply the user's established coding style to Rust code. Use when th
 - Keep request construction and response parsing visible in small client methods or service modules.
 - Model the response fields an operation consumes with a small local Serde struct or `serde_json::Value`. Use Serde attributes for differences between the wire representation and local types.
 
+## SQLite
+
+Keep the database in one file, as vladkens/ghstats `src/db_client.rs` does:
+
+- `// MARK: Migrations`: one function per schema version, `migrate_v1(db: &Connection)`, `migrate_v2`, …, each running its own list of SQL statements; `migrate()` holds `vec![migrate_v1, …]`, reads `PRAGMA user_version` and runs the missing ones, setting the version after each.
+- `// MARK: Models`: plain structs of what the queries return, each with a `from_row` mapper.
+- `// MARK: <Client>`: a struct that owns the connection (`Mutex<Connection>` when it is shared) with `// MARK: Getters`, `// MARK: Inserters` and `// MARK: Updater` groups of `get_*`, `insert_*`, `update_*`, `mark_*` and `delete_*` methods; each one is `let qs = "…";`, then `prepare` and `query_map`, or `execute`.
+- Files the rows point to (recordings, uploads) live in their own module, not in the database client.
+
 ## Tests and Comments
 
 - Put unit tests beside the implementation in an inline `#[cfg(test)] mod tests`. Use direct assertions and tables or loops for repeated cases; keep file, database, or network fixtures close to the tests that need them.
