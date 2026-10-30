@@ -9,16 +9,19 @@
   pr-gate --accept REASON …  reject the open findings, one reason per finding
   pr-gate --hook             Claude Code PreToolUse hook on `git push`: denies the push until
                              pr-gate has passed the branch's current changes
+  pr-gate --stop             Claude Code Stop hook: keeps the turn going while CI runs or failed
+                             on an open PR whose head is checked out here, so nobody hears
+                             "done" before CI is green
 
 What counts is the branch's own code changes against the default branch: the changed lines of
 code files, without docs, lockfiles, tests, assets and whitespace. They are compared as a set of
 lines, so a rebase that keeps them doesn't count as a change. Nothing changed since the last
-review: no review. A lot of new code in the branch: /simplify first, once. Otherwise a quick
-Codex review of the delta (low effort) answers OK, FIX or DEEP. A deep review of the whole branch
-(high effort) runs instead when the quick one says DEEP, the delta touches a risky path or adds
-`unsafe`, or the code changed since the last deep review passed DEEP_LINES; at most DEEP_MAX per
-branch. A review that can't run blocks, for the person to look at. State is kept per branch in
-<git common dir>/pr-gate/.
+review: no review. A lot of new code in the branch: a pass with the code-style skill of its
+language first (STYLES; none for other languages), once. Otherwise a quick Codex review of the
+delta (low effort) answers OK, FIX or DEEP. A deep review of the whole branch (high effort) runs
+instead when the quick one says DEEP, the delta touches a risky path or adds `unsafe`, or the code
+changed since the last deep review passed DEEP_LINES; at most DEEP_MAX per branch. A review that
+can't run blocks, for the person to look at. State is kept per branch in <git common dir>/pr-gate/.
 """
 
 import argparse
@@ -49,7 +52,9 @@ RISKY = (
     "*migrat*", "auth/*", "auth.*", "*oauth*", "*secret*", "*credential*", "*crypto*",
     "*password*", ".github/workflows/*", "build.rs",
 )
-SIMPLIFY_LINES = 300  # added code lines in the branch, mostly new rather than rewritten
+# Code-style skills in ~/.claude/skills/ by file extension; a script without one: by its shebang.
+STYLES = {".rs": "code-style-rust", ".py": "code-style-python"}
+STYLE_LINES = 300  # added code lines in the branch, mostly new rather than rewritten
 DEEP_LINES = 400  # code lines changed since the last deep review
 DEEP_MAX = 2
 TIMEOUT = {"low": 5 * 60, "high": 9 * 60}  # below the 10 minutes an agent's command can run
@@ -191,6 +196,21 @@ class Repo:
         lines = "\n".join(f"- {x}" for x in items[-10:])
         return f"The author already rejected these findings; don't repeat them:\n{lines}\n"
 
+    def styles(self, changes: Counter) -> str:
+        """The code-style skills for the files the changes add lines to, as `/a and /b`; empty
+        when no language of theirs has one."""
+        exts = set()
+        for path in {p for p, x in changes if x.startswith("+")}:
+            file = self.top / path
+            if file.suffix or not file.is_file():
+                exts.add(file.suffix)
+                continue
+
+            with file.open("rb") as f:
+                exts.add(".py" if re.match(rb"#!.*\b(python|uv run)", f.readline()) else "")
+
+        return " and ".join(f"/{x}" for ext, x in STYLES.items() if ext in exts)
+
 
 def codex(repo: Repo, prompt: str, effort: str) -> tuple[str | None, str]:
     """The review's last message, or None and why it couldn't run."""
@@ -235,14 +255,14 @@ def passed(repo: Repo, fp: str, why: str) -> int:
     return 0
 
 
-def fix(repo: Repo, fp: str, text: str, simplify: bool) -> int:
+def fix(repo: Repo, fp: str, text: str, style: str) -> int:
     repo.st["last"] = repo.snapshot()
     repo.st["open"] = {"fp": fp, "findings": text}
     repo.save()
-    return open_findings(repo, simplify)
+    return open_findings(repo, style)
 
 
-def open_findings(repo: Repo, simplify: bool = False) -> int:
+def open_findings(repo: Repo, style: str = "") -> int:
     print(repo.st["open"]["findings"])
     print(
         "\npr-gate: findings to handle. Check each one against the code. Fix the real ones,"
@@ -250,8 +270,11 @@ def open_findings(repo: Repo, simplify: bool = False) -> int:
         " without changing code, give one reason per finding:"
         " `pr-gate --accept '<finding>: <why it is wrong>' --accept '…'`."
     )
-    if simplify:
-        print("Before that, run /simplify on the branch's changes and commit what it changes.")
+    if style:
+        print(
+            f"Before that, review the branch's changes (`git diff {repo.default}...HEAD`) against"
+            f" {style}, fix what doesn't match and commit."
+        )
 
     return 1
 
@@ -284,12 +307,15 @@ def review(repo: Repo) -> int:
 
     added = sum(n for (_, line), n in cur.items() if line.startswith("+"))
     deleted = size(cur) - added
-    if not repo.st.get("simplify") and added > SIMPLIFY_LINES and added > 3 * deleted:
-        repo.st["simplify"] = True
+    big = added > STYLE_LINES and added > 3 * deleted
+    style = repo.styles(cur) if big and not repo.st.get("style") else ""
+    if style:
+        repo.st["style"] = True
         repo.save()
         print(
-            f"pr-gate: this branch adds {added} lines of new code. Run /simplify on its changes,"
-            " commit what it changes, then run pr-gate again."
+            f"pr-gate: this branch adds {added} lines of new code. Review its changes"
+            f" (`git diff {repo.default}...HEAD`) against {style}, fix what doesn't match,"
+            " commit, then run pr-gate again."
         )
         return 1
 
@@ -300,7 +326,7 @@ def review(repo: Repo) -> int:
     if since_deep > DEEP_LINES:
         why.append(f"{since_deep} lines of code changed since the last deep review")
 
-    simplify = False
+    style = ""
     if not why:
         # After a rebase the last reviewed commit isn't an ancestor: show the delta's files whole.
         last = repo.st.get("last")
@@ -316,15 +342,15 @@ def review(repo: Repo) -> int:
             return broken(err or f"no verdict in the quick review:\n{text}")
 
         complex_ = re.search(r"^\W*COMPLEX:", text, re.MULTILINE)
-        simplify = bool(complex_) and not repo.st.get("simplify")
-        repo.st["simplify"] = repo.st.get("simplify") or simplify
+        style = repo.styles(delta) if complex_ and not repo.st.get("style") else ""
+        repo.st["style"] = repo.st.get("style") or bool(style)
         match found:
-            case ("OK", _) if simplify:
-                return fix(repo, fp, text, simplify)
+            case ("OK", _) if style:
+                return fix(repo, fp, text, style)
             case ("OK", _):
                 return passed(repo, fp, "quick review found nothing")
             case ("FIX", _):
-                return fix(repo, fp, text, simplify)
+                return fix(repo, fp, text, style)
             case ("DEEP", reason):
                 why.append(f"the quick review asked for it: {reason or 'no reason given'}")
 
@@ -348,7 +374,7 @@ def review(repo: Repo) -> int:
     if found[0] == "OK":
         return passed(repo, fp, "deep review found nothing")
 
-    return fix(repo, fp, text, simplify)
+    return fix(repo, fp, text, style)
 
 
 def accept(repo: Repo, reasons: list[str]) -> int:
@@ -415,20 +441,81 @@ def hook() -> int:
     return 0
 
 
+# A check still running, and one that ended badly (check runs' conclusions, statuses' states).
+WAITING = {"QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED", "EXPECTED"}
+BAD = {"FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "ERROR"}
+
+
+def stop() -> int:
+    """Blocks the end of a turn while an open PR of this repository, whose head is checked out
+    in one of its worktrees (pushed work of ours), has CI running, or once when it failed. Fails
+    open on its own errors."""
+    try:
+        pld = json.load(sys.stdin)
+        cwd = Path(pld.get("cwd") or ".")
+        top = Path(git("rev-parse", "--show-toplevel", cwd=cwd))
+        if not OWNER.search(git("config", "--get", "remote.origin.url", cwd=top)):
+            return 0
+
+        heads = set(re.findall(r"^HEAD (\w+)$", git("worktree", "list", "--porcelain", cwd=top), re.M))
+        fields = "number,headRefOid,statusCheckRollup"
+        out = subprocess.run(
+            ["gh", "pr", "list", "--state", "open", "--json", fields],
+            cwd=top, capture_output=True, text=True, timeout=20, check=True,
+        ).stdout
+        running, failed = [], []
+        for pr in json.loads(out):
+            if pr["headRefOid"] not in heads:
+                continue
+
+            for c in pr["statusCheckRollup"]:
+                name = f"#{pr['number']} {c.get('name') or c.get('context')}"
+                state = c.get("status") if c.get("status") != "COMPLETED" else c.get("conclusion")
+                state = state or c.get("state")
+                if state in WAITING:
+                    running.append(name)
+                elif state in BAD:
+                    failed.append(name)
+    except Exception as e:
+        print(f"pr-gate: stop hook error, not blocking: {e}", file=sys.stderr)
+        return 0
+
+    if running:
+        reason = (
+            f"pr-gate: CI is still running ({', '.join(running)}). Wait for it with"
+            f" `gh pr checks <number> --watch` in {top} (10-minute timeout) and report the result;"
+            " don't call the work done before CI is green."
+        )
+    elif failed and not pld.get("stop_hook_active"):
+        reason = (
+            f"pr-gate: CI failed ({', '.join(failed)}). Look at it (`gh run view --log-failed`),"
+            " fix it, or tell the person plainly that CI is red."
+        )
+    else:
+        return 0
+
+    print(json.dumps({"decision": "block", "reason": reason}))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__.splitlines()[0],
-        epilog="Thresholds: simplify over {}, deep over {} lines, at most {} deep reviews.".format(
-            SIMPLIFY_LINES, DEEP_LINES, DEEP_MAX
+        epilog="Thresholds: style over {}, deep over {} lines, at most {} deep reviews.".format(
+            STYLE_LINES, DEEP_LINES, DEEP_MAX
         ),
     )
     parser.add_argument(
         "--accept", metavar="REASON", action="append", help="reject one open finding with a reason"
     )
     parser.add_argument("--hook", action="store_true", help="run as the Claude Code push hook")
+    parser.add_argument("--stop", action="store_true", help="run as the Claude Code Stop hook")
     args = parser.parse_args()
     if args.hook:
         return hook()
+
+    if args.stop:
+        return stop()
 
     repo = Repo.open(Path.cwd(), fetch=True)
     if repo is None:

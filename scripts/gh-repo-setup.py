@@ -15,8 +15,9 @@ What a set-up repo has:
 - Merging: squash only, the commit titled by the PR; the branch deleted after merge; an
   "Update branch" button on PRs.
 - main: changed only through PRs; no force-push, no deletion, nobody bypasses (you included);
-  every review thread resolved before merge; the CI jobs in REPOS green before merge; no
-  Copilot review (it bills the Copilot seat).
+  every review thread resolved before merge; the CI jobs in REPOS green before merge, on a
+  branch up to date with main (two PRs that each pass can break main together); no Copilot
+  review (it bills the Copilot seat).
 - Release tags vX.Y.Z: never deleted or moved (CI can still create them; `v1` can move).
 - Safety: Dependabot alerts about vulnerable dependencies (no PRs); secret scanning that also
   blocks pushes with secrets; a private way to report vulnerabilities; CI's token read-only
@@ -72,6 +73,7 @@ RULE_WORDS = {
     "allowed_merge_methods": "allowed merge methods",
     "required_approving_review_count": "required approvals",
     "required_status_checks": "required CI jobs",
+    "strict_required_status_checks_policy": "branch up to date with main before merge",
 }
 
 
@@ -96,7 +98,7 @@ def main_rules(checks: list[str]) -> dict:
             {
                 "type": "required_status_checks",
                 "parameters": {
-                    "strict_required_status_checks_policy": False,
+                    "strict_required_status_checks_policy": True,
                     "do_not_enforce_on_create": False,
                     "required_status_checks": [
                         {"context": c, "integration_id": ACTIONS_APP} for c in checks

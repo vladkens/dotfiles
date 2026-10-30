@@ -52,6 +52,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.local/bin/pr-gate --stop",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
@@ -61,7 +72,8 @@
   },
   "enabledPlugins": {
     "clangd-lsp@claude-plugins-official": true,
-    "swift-lsp@claude-plugins-official": true
+    "swift-lsp@claude-plugins-official": true,
+    "aikido@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {},
   "spinnerTipsEnabled": false,
@@ -73,7 +85,7 @@
   },
   "autoUpdatesChannel": "stable",
   "tui": "fullscreen",
-  "autoMemoryEnabled": true,
+  "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "theme": "auto",
   "editorMode": "normal",

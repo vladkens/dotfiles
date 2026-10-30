@@ -12,11 +12,13 @@ Usage (prefix with `uv run --script account-switch.py`):
               move the login of the profile in DIR (a CLAUDE_CONFIG_DIR) here as NAME; that
               profile is logged out without revoking, so close its sessions first
   use NAME    make NAME the login of every Claude session of the profile
-  status      show the saved accounts, the live one and when a full one frees up
+  status      show remaining weekly and 5-hour limits, reset times and the live account
   measure     verify a session.measure hint against the live account's usage and switch
 
 Accounts are used in PRIORITY order: the first one until its 5-hour or weekly window reaches
 THRESHOLD percent, then the next one with room, and back once the first one's window resets.
+If every account is above THRESHOLD, use the largest remaining reserve weighted by its plan.
+100 Pro units means a full Pro allowance; the weekly conversion is an estimate, not an API quota.
 Running sessions pick a switch up within about 30 s, when Claude Code's Keychain cache expires.
 Only the default profile is handled: with CLAUDE_CONFIG_DIR or CLAUDE_SECURESTORAGE_CONFIG_DIR
 set it refuses.
@@ -44,6 +46,8 @@ PRIORITY = ("sw", "personal")
 # Percent of a window that counts as full: parallel agents can burn the last 10% between two
 # readings, and a switch takes about 30 s to reach every session.
 THRESHOLD = 90
+RESERVE_MARGIN = 1.25  # require 25% more estimated room before switching between reserves
+CACHE_MAX_AGE = 5 * 60  # reuse verified readings during polling cooldowns, never past a reset
 SETTLE = 60  # seconds after a switch when sessions may still report the previous account
 LOCK_WAIT = 20  # seconds to wait for all of Claude Code's locks together
 RETRY = 75  # a hint has not been handled; the mod must retry even if its numbers stay the same
@@ -54,7 +58,7 @@ BACKOFF_MAX = 30 * 60  # a longer Retry-After still takes precedence
 
 CLAUDE_DIR = Path.home() / ".claude"
 CONFIG = Path.home() / ".claude.json"
-STATE = CLAUDE_DIR / "account-switch.json"  # no secrets: blocked windows and usage retry state
+STATE = CLAUDE_DIR / "account-switch.json"  # no secrets: usage, blocked windows and retry state
 LIVE = "Claude Code-credentials"  # the Keychain item Claude Code reads its login from
 SAVED = "Claude Code-account-switch"  # one item per saved account, keyed by its name
 WINDOWS = ("five_hour", "seven_day")
@@ -276,7 +280,42 @@ def switch(name: str, expected: tuple[dict, str] | None = None) -> bool:
     return True
 
 
-def pick(current: str, limits: list[dict], saved: list[str], full: dict, now: float) -> str:
+def subscription(login: dict) -> tuple[str, float]:
+    oauth = login.get("claudeAiOauth") or {}
+    kind, tier = oauth.get("subscriptionType"), oauth.get("rateLimitTier")
+    if tier == "default_claude_max_20x":
+        return "Max 20x", 20
+
+    if tier == "default_claude_max_5x":
+        return ("Team Premium", 6.25) if kind == "team" else ("Max 5x", 5)
+
+    if kind == "team":
+        return "Team", 1.25
+
+    return (kind or "Unknown").capitalize(), 1
+
+
+def reserve(limits: list[dict]) -> float:
+    # Compare the smaller remaining window on a common, approximate plan scale.
+    # Advertised plan multipliers describe session capacity, not exact weekly quotas:
+    # https://support.claude.com/en/articles/11049741-what-is-the-max-plan
+    # https://support.claude.com/en/articles/9266767-what-is-the-team-plan
+    remaining = {limit["kind"]: max(0, 100 - limit["percentUsed"]) for limit in limits}
+    if not all(kind in remaining for kind in WINDOWS):
+        return 0
+
+    return min(remaining[kind] for kind in WINDOWS)
+
+
+def pick(
+    current: str,
+    limits: list[dict],
+    saved: list[str],
+    full: dict,
+    now: float,
+    usage: dict | None = None,
+    weights: dict | None = None,
+) -> str:
     """Merge verified windows without clearing missing ones; keep old scalar state readable."""
     blocked = full.get(current, {})
     if isinstance(blocked, (int, float)):
@@ -313,7 +352,19 @@ def pick(current: str, limits: list[dict], saved: list[str], full: dict, now: fl
         full.pop(current, None)
 
     free = [name for name in PRIORITY if name in saved and full_until(full.get(name, {})) <= now]
-    return free[0] if free else current
+    if free:
+        return free[0]
+
+    scores = {
+        name: reserve((usage or {}).get(name, [])) * (weights or {}).get(name, 1)
+        for name in PRIORITY
+        if name in saved
+    }
+    best = max(scores, key=lambda name: (scores[name], name == current), default=current)
+    if scores.get(best, 0) <= scores.get(current, 0) * RESERVE_MARGIN:
+        return current
+
+    return best
 
 
 def full_until(blocked: dict | float) -> float:
@@ -451,6 +502,146 @@ def verified_usage(account: dict, token: str, state: dict) -> list[dict]:
     return limits
 
 
+def usage_state(state: dict, name: str, account: dict) -> dict:
+    readings = state.setdefault("usage", {})
+    if not same_account(readings.get(name), account):
+        readings[name] = {key: account.get(key) for key in ("accountUuid", "organizationUuid")}
+
+    reading = readings[name]
+    # Adopt the old shared retry state for the account it verified, or the live account
+    # (looked up first) if verification never succeeded. Preserve an outstanding backoff.
+    verified = state.get("verifiedLogin")
+    if not verified or same_account(verified, account):
+        for key in ("verifiedLogin", "usageRetryAt", "usageError", "usageBackoff"):
+            if key in state:
+                reading.setdefault(key, state.pop(key))
+
+    # Earlier versions recorded HTTP 429 only in this message. Preserve the active
+    # cooldown while allowing verified failover without waiting for another request.
+    if reading.get("usageError") == "Account usage check failed (HTTP 429); will retry":
+        reading.setdefault("usageRateLimited", True)
+
+    return reading
+
+
+def poll_usage(account: dict, token: str | None, reading: dict) -> list[dict] | None:
+    if time.time() < reading.get("usageRetryAt", 0):
+        return None
+
+    reading["usageRetryAt"] = time.time() + POLL_INTERVAL
+    try:
+        if not token:
+            raise UsageUnavailable("Account usage unavailable: no access token")
+
+        limits = verified_usage(account, token, reading)
+    except UsageUnavailable as error:
+        delay = error.retry_after
+        if error.rate_limited:
+            reading["usageBackoff"] = min(
+                BACKOFF_MAX,
+                max(BACKOFF_INITIAL, reading.get("usageBackoff", 0) * BACKOFF_FACTOR),
+            )
+            delay = max(delay, reading["usageBackoff"])
+
+        reading["usageError"] = str(error)
+        reading["usageRateLimited"] = error.rate_limited
+        reading["usageRetryAt"] = time.time() + delay
+        raise
+
+    reading.pop("usageBackoff", None)
+    reading.pop("usageError", None)
+    reading.pop("usageRateLimited", None)
+    return limits
+
+
+def recent_limits(account: dict, token: str | None, reading: dict, now: float) -> list[dict] | None:
+    verified = reading.get("verifiedLogin", {})
+    if (
+        not token
+        or not same_account(verified, account)
+        or verified.get("tokenHash") != hashlib.sha256(token.encode()).hexdigest()
+        or not 0 <= now - reading.get("checkedAt", -CACHE_MAX_AGE) <= CACHE_MAX_AGE
+        or (reading.get("usageError") and not reading.get("usageRateLimited"))
+    ):
+        return None
+
+    limits = reading.get("limits", [])
+    if any(
+        limit.get("resetsAt") and datetime.fromisoformat(limit["resetsAt"]).timestamp() <= now
+        for limit in limits
+    ):
+        return None
+
+    return limits or None
+
+
+def duration(seconds: float) -> str:
+    if seconds < 60:
+        return "<1m"
+
+    days, minutes = divmod(int(seconds // 60), 24 * 60)
+    hours, minutes = divmod(minutes, 60)
+    return " ".join(
+        f"{value}{unit}" for value, unit in ((days, "d"), (hours, "h"), (minutes, "m")) if value
+    )
+
+
+def reset_text(until: float, now: float) -> str:
+    when = f"{datetime.fromtimestamp(until):%d.%m %H:%M}"
+    return (
+        f"resets {when} (in {duration(until - now)})"
+        if until > now
+        else f"last reset {when} (passed)"
+    )
+
+
+def print_usage(
+    reading: dict, blocked: dict | float, now: float, error: str = "", weight: float = 1
+) -> None:
+    limits = {limit["kind"]: limit for limit in reading.get("limits", [])}
+    for kind, label in (("seven_day", "Weekly"), ("five_hour", "5-hour")):
+        limit = limits.get(kind)
+        if limit:
+            until = (
+                datetime.fromisoformat(limit["resetsAt"]).timestamp()
+                if limit.get("resetsAt")
+                else 0
+            )
+            remaining = f"{max(0, 100 - limit['percentUsed']):g}% left"
+            if until and until <= now:
+                remaining = "remaining unknown"
+
+            reset = reset_text(until, now) if until else "reset time unknown"
+            print(f"    {label}: {remaining}, {reset}")
+        else:
+            until = blocked.get(kind, 0) if isinstance(blocked, dict) else 0
+            reset = f", {reset_text(until, now)} (last known)" if until else ""
+            print(f"    {label}: remaining unknown{reset}")
+
+    if (
+        all(kind in limits for kind in WINDOWS)
+        and 0 <= now - reading.get("checkedAt", -CACHE_MAX_AGE) <= CACHE_MAX_AGE
+        and all(
+            not limit.get("resetsAt") or datetime.fromisoformat(limit["resetsAt"]).timestamp() > now
+            for limit in limits.values()
+        )
+    ):
+        print(f"    Reserve: ~{reserve(list(limits.values())) * weight:g} Pro units (estimate)")
+
+    checked = reading.get("checkedAt")
+    if checked is not None:
+        print(
+            f"    Checked {datetime.fromtimestamp(checked):%d.%m %H:%M} ({duration(now - checked)} ago)"
+        )
+
+    error = error or reading.get("usageError", "")
+    if error:
+        print(f"    {error}" + ("; showing saved data" if checked is not None else ""))
+        retry_at = reading.get("usageRetryAt", 0)
+        if retry_at > now:
+            print(f"    Next attempt after {datetime.fromtimestamp(retry_at):%d.%m %H:%M}")
+
+
 # MARK: Commands
 
 
@@ -489,31 +680,49 @@ def cmd_use(args: argparse.Namespace) -> None:
 
 
 def cmd_status(args: argparse.Namespace) -> None:
-    saved = saved_accounts()
-    live = owner(saved, config_account())
-    state = json.loads(STATE.read_text()) if STATE.exists() else {}
-    full = state.get("full", {})
+    saved, errors = {}, {}
     for name in PRIORITY:
-        if name not in saved:
-            print(f"  {name}: not saved")
-            continue
+        try:
+            data = keychain_read(SAVED, name)
+            if data:
+                saved[name] = data
+        except (SystemExit, OSError, ValueError, subprocess.TimeoutExpired) as error:
+            errors[name] = str(error)
 
-        email = saved[name]["oauthAccount"].get("emailAddress", "")
-        until = full_until(full.get(name, {}))
-        note = (
-            f", full until {datetime.fromtimestamp(until):%H:%M %d.%m}"
-            if until > time.time()
-            else ""
-        )
-        print(f"{'*' if name == live else ' '} {name}: {email}{note}")
+    account = config_account() if CONFIG.exists() else None
+    live = owner(saved, account)
+    with state_lock() as state:
+        if live:
+            usage_state(state, live, account)
 
-    if state.get("usageError"):
-        print(state["usageError"])
-        retry_at = state.get("usageRetryAt", 0)
-        if retry_at > time.time():
-            print(f"  Next attempt after {datetime.fromtimestamp(retry_at):%H:%M %d.%m}")
-        else:
-            print("  Retry pending")
+        for name in PRIORITY:
+            if name not in saved:
+                print(f"  {name}: {errors.get(name, 'not saved')}")
+                continue
+
+            account = saved[name]["oauthAccount"]
+            reading = usage_state(state, name, account)
+            error = ""
+            item = saved[name]["login"]
+            try:
+                # The live login can have a fresher token than its saved copy. Never refresh
+                # saved logins here: Claude Code owns token rotation.
+                item = (
+                    keychain_read(LIVE, keychain_user()) if name == live else saved[name]["login"]
+                )
+                limits = poll_usage(account, access_token(item or {}), reading)
+                if limits is not None:
+                    reading.update(limits=limits, checkedAt=time.time())
+            except UsageUnavailable:
+                pass  # poll_usage recorded the error and retry time for this account.
+            except (SystemExit, OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                error = str(exc)
+
+            plan, weight = subscription(item or {})
+            print(
+                f"{'*' if name == live else ' '} {name}: {account.get('emailAddress', '')} [{plan}]"
+            )
+            print_usage(reading, state.get("full", {}).get(name, {}), time.time(), error, weight)
 
 
 def cmd_measure(args: argparse.Namespace) -> int | None:
@@ -526,9 +735,6 @@ def cmd_measure(args: argparse.Namespace) -> int | None:
         if state is None or now - state.get("switchedAt", 0) < SETTLE:
             return RETRY
 
-        if now < state.get("usageRetryAt", 0):
-            return RETRY
-
         saved = saved_accounts()
         with login_locks():
             account = config_account()
@@ -538,28 +744,35 @@ def cmd_measure(args: argparse.Namespace) -> int | None:
         if current is None:
             return
 
-        state["usageRetryAt"] = now + POLL_INTERVAL
+        reading = usage_state(state, current, account)
         token = access_token(item)
-        if not token:
-            return RETRY
-
+        fresh = False
         try:
-            limits = verified_usage(account, token, state)
+            limits = poll_usage(account, token, reading)
+            fresh = limits is not None
         except UsageUnavailable as error:
-            delay = error.retry_after
-            if error.rate_limited:
-                # Persist across sessions; only our backoff is capped, never Retry-After.
-                state["usageBackoff"] = min(
-                    BACKOFF_MAX,
-                    max(BACKOFF_INITIAL, state.get("usageBackoff", 0) * BACKOFF_FACTOR),
-                )
-                delay = max(delay, state["usageBackoff"])
-            else:
+            if not error.rate_limited:
                 print(str(error), file=sys.stderr)
 
-            state["usageError"] = str(error)
-            state["usageRetryAt"] = time.time() + delay
-            return RETRY
+            limits = None
+
+        if limits is None:
+            limits = recent_limits(account, token, reading, time.time())
+            if limits is None:
+                # A usage-API cooldown must not trap a verified, already-low account.
+                # We can try another account with fresh data without assuming any
+                # remaining capacity or resetting the current account's known blocks.
+                verified = reading.get("verifiedLogin", {})
+                if (
+                    not reading.get("usageRateLimited")
+                    or not same_account(verified, account)
+                    or verified.get("tokenHash")
+                    != hashlib.sha256((token or "").encode()).hexdigest()
+                    or full_until(state.get("full", {}).get(current, {})) <= time.time()
+                ):
+                    return RETRY
+
+                limits = []
 
         # /login and token refresh can run while the network request is in flight.
         with login_locks():
@@ -569,10 +782,42 @@ def cmd_measure(args: argparse.Namespace) -> int | None:
         if not same_account(live, account) or live_token != token:
             return RETRY
 
-        state.pop("usageBackoff", None)
-        state.pop("usageError", None)
+        if fresh:
+            reading.update(limits=limits, checkedAt=time.time())
 
-        target = pick(current, limits, list(saved), state.setdefault("full", {}), time.time())
+        now = time.time()
+        full = state.setdefault("full", {})
+        pick(current, limits, [], full, now)
+        usage = {current: limits}
+        weights = {current: subscription(item)[1]}
+        # Fetch inactive accounts only when the current one is low or a preferred one
+        # may have reset. They share status's cache and backoff and never refresh tokens.
+        check_others = full_until(full.get(current, {})) > now or any(
+            name in saved and full_until(full.get(name, {})) <= now
+            for name in PRIORITY[: PRIORITY.index(current)]
+        )
+        if check_others:
+            for name, data in saved.items():
+                if name == current:
+                    continue
+
+                other_account = data["oauthAccount"]
+                other_token = access_token(data["login"])
+                other = usage_state(state, name, other_account)
+                try:
+                    other_limits = poll_usage(other_account, other_token, other)
+                    if other_limits is not None:
+                        other.update(limits=other_limits, checkedAt=time.time())
+                except UsageUnavailable:
+                    pass
+
+                other_limits = recent_limits(other_account, other_token, other, time.time())
+                if other_limits is not None:
+                    usage[name] = other_limits
+                    weights[name] = subscription(data["login"])[1]
+                    pick(name, other_limits, [], full, time.time())
+
+        target = pick(current, limits, list(usage), full, time.time(), usage, weights)
         if target != current:
             if switch(target, expected=(account, token)):
                 state["switchedAt"] = time.time()
@@ -581,7 +826,9 @@ def cmd_measure(args: argparse.Namespace) -> int | None:
             # Check the new login after SETTLE, including when no new response arrives.
             return RETRY
 
-        return
+        # Keep the hook's timer awake while using the last reserve, even if the
+        # session stops producing responses or its rounded percentages stay the same.
+        return RETRY if not fresh or full_until(full.get(current, {})) > time.time() else None
 
 
 def main() -> int | None:
@@ -595,7 +842,7 @@ def main() -> int | None:
     commands.add_parser("use", help="Switch every session to a saved account.").add_argument(
         "name", choices=PRIORITY
     )
-    commands.add_parser("status", help="Show the saved accounts and the live one.")
+    commands.add_parser("status", help="Show remaining limits and reset times for each account.")
     commands.add_parser("measure", help="Switch on rate limits read from stdin (the mod).")
     args = parser.parse_args()
 

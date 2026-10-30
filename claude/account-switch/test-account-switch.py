@@ -36,6 +36,13 @@ def login(token: str) -> dict:
     return {"claudeAiOauth": oauth, "trustedDeviceToken": f"td-{token}"}
 
 
+def windows(five_hour: float, seven_day: float) -> list[dict]:
+    return [
+        {"kind": kind, "percentUsed": used, "resetsAt": "2099-01-01T00:00:00Z"}
+        for kind, used in (("five_hour", five_hour), ("seven_day", seven_day))
+    ]
+
+
 class Home(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -44,6 +51,7 @@ class Home(unittest.TestCase):
         (home / ".claude").mkdir()
         self.keychain: dict[tuple[str, str], dict] = {}
         self.usage = LOW
+        self.usage_by_token = {}
         patches = {
             "CLAUDE_DIR": home / ".claude",
             "CONFIG": home / ".claude.json",
@@ -64,12 +72,14 @@ class Home(unittest.TestCase):
 
     def oauth_get(self, path: str, token: str) -> dict:
         if path == "usage":
+            live = sw.access_token(self.keychain.get((sw.LIVE, "me"), {}))
+            limits = self.usage_by_token.get(token, self.usage if token == live else LOW)
             return {
                 limit["kind"]: {
                     "utilization": limit["percentUsed"],
                     "resets_at": limit.get("resetsAt"),
                 }
-                for limit in self.usage
+                for limit in limits
             }
 
         for (service, _), data in self.keychain.items():
@@ -90,6 +100,13 @@ class Home(unittest.TestCase):
 
     def save(self, name: str, account: dict, token: str) -> None:
         self.keychain[(sw.SAVED, name)] = {"login": login(token), "oauthAccount": account}
+
+    def set_plan(self, name: str, kind: str, tier: str) -> None:
+        saved = self.keychain[(sw.SAVED, name)]
+        metadata = {"subscriptionType": kind, "rateLimitTier": tier}
+        saved["login"]["claudeAiOauth"].update(metadata)
+        if sw.same_account(saved["oauthAccount"], self.live_account()):
+            self.keychain[(sw.LIVE, "me")]["claudeAiOauth"].update(metadata)
 
     def measure(self, limits: list[dict]) -> int | None:
         with mock.patch("sys.stdin", io.StringIO(json.dumps(limits))):
@@ -153,6 +170,66 @@ class PickTest(unittest.TestCase):
         self.assertEqual(sw.pick("sw", [], ["sw", "personal"], full, 1001), "personal")
         self.assertEqual(full["sw"], {"seven_day": 2000})
         self.assertEqual(sw.pick("sw", [], ["sw", "personal"], full, 2001), "sw")
+
+    def test_reserve_uses_plan_capacity_when_both_accounts_exceed_the_threshold(self):
+        usage = {"sw": windows(95, 17), "personal": windows(14, 99)}
+        full = {"personal": {"seven_day": 5000}}
+        weights = {"sw": 1.25, "personal": 20}
+        self.assertEqual(
+            sw.pick("sw", usage["sw"], list(usage), full, 1000, usage, weights), "personal"
+        )
+
+    def test_normal_priority_wins_before_reserves_are_needed(self):
+        usage = {"sw": windows(20, 20), "personal": windows(20, 20)}
+        self.assertEqual(
+            sw.pick("personal", usage["personal"], list(usage), {}, 1000, usage, {"personal": 20}),
+            "sw",
+        )
+
+    def test_a_larger_plan_with_an_exhausted_window_has_no_reserve(self):
+        for used in (windows(100, 97), windows(14, 100)):
+            usage = {"sw": windows(99, 17), "personal": used}
+            full = {"personal": {"seven_day": 5000}}
+            self.assertEqual(
+                sw.pick("sw", usage["sw"], list(usage), full, 1000, usage, {"personal": 20}),
+                "sw",
+            )
+
+    def test_unknown_window_is_not_counted_as_reserve(self):
+        usage = {"sw": windows(99, 17), "personal": windows(14, 97)[1:]}
+        full = {"personal": {"seven_day": 5000}}
+        self.assertEqual(
+            sw.pick("sw", usage["sw"], list(usage), full, 1000, usage, {"personal": 20}), "sw"
+        )
+
+    def test_small_reserve_differences_do_not_make_accounts_oscillate(self):
+        usage = {"sw": windows(95, 20), "personal": windows(94, 20)}
+        full = {"personal": {"five_hour": 5000}}
+        self.assertEqual(sw.pick("sw", usage["sw"], list(usage), full, 1000, usage), "sw")
+        usage["personal"] = windows(93, 20)
+        self.assertEqual(sw.pick("sw", usage["sw"], list(usage), full, 1000, usage), "personal")
+
+    def test_equal_reserves_keep_the_current_account(self):
+        usage = {"sw": windows(95, 20), "personal": windows(95, 20)}
+        full = {"sw": {"five_hour": 5000}}
+        self.assertEqual(
+            sw.pick("personal", usage["personal"], list(usage), full, 1000, usage), "personal"
+        )
+
+
+class SubscriptionTest(unittest.TestCase):
+    def test_capacity_comes_from_login_metadata(self):
+        for kind, tier, expected in (
+            ("pro", "default_claude_pro", ("Pro", 1)),
+            ("max", "default_claude_max_5x", ("Max 5x", 5)),
+            ("max", "default_claude_max_20x", ("Max 20x", 20)),
+            ("team", "default_raven", ("Team", 1.25)),
+            ("team", "default_claude_max_5x", ("Team Premium", 6.25)),
+            ("max", "unknown_future_tier", ("Max", 1)),
+        ):
+            with self.subTest(kind=kind, tier=tier):
+                data = {"claudeAiOauth": {"subscriptionType": kind, "rateLimitTier": tier}}
+                self.assertEqual(sw.subscription(data), expected)
 
 
 class SwitchTest(Home):
@@ -296,7 +373,7 @@ class SwitchTest(Home):
 
         state = json.loads(sw.STATE.read_text())
         self.assertEqual(state["full"], before)
-        self.assertEqual(state["usageRetryAt"], 1300)
+        self.assertEqual(state["usage"]["sw"]["usageRetryAt"], 1300)
         with mock.patch.object(sw.time, "time", return_value=1300):
             self.assertIsNone(self.measure(FULL))
 
@@ -320,7 +397,7 @@ class SwitchTest(Home):
             self.assertEqual(stdout.getvalue(), "")
             self.assertEqual(stderr.getvalue(), "")
             state = json.loads(sw.STATE.read_text())
-            self.assertEqual(state["usageRetryAt"], now + delay)
+            self.assertEqual(state["usage"]["sw"]["usageRetryAt"], now + delay)
             self.assertEqual(state["full"], before)
             self.assertEqual(self.live_account(), SW)
 
@@ -349,8 +426,8 @@ class SwitchTest(Home):
             self.assertEqual(self.measure(FULL), sw.RETRY)
 
         state = json.loads(sw.STATE.read_text())
-        self.assertEqual(state["usageRetryAt"], 4600)
-        self.assertEqual(state["usageBackoff"], 1800)
+        self.assertEqual(state["usage"]["sw"]["usageRetryAt"], 4600)
+        self.assertEqual(state["usage"]["sw"]["usageBackoff"], 1800)
 
     def test_success_clears_rate_limit_backoff_and_error(self):
         self.log_in(SW, "sw")
@@ -358,7 +435,7 @@ class SwitchTest(Home):
         with mock.patch.object(sw.time, "time", return_value=1000):
             self.assertIsNone(self.measure(LOW))
 
-        state = json.loads(sw.STATE.read_text())
+        state = json.loads(sw.STATE.read_text())["usage"]["sw"]
         self.assertNotIn("usageBackoff", state)
         self.assertNotIn("usageError", state)
         self.assertEqual(state["usageRetryAt"], 1060)
@@ -371,7 +448,7 @@ class SwitchTest(Home):
         ):
             self.assertEqual(self.measure(LOW), sw.RETRY)
 
-        self.assertEqual(json.loads(sw.STATE.read_text())["usageRetryAt"], 1360)
+        self.assertEqual(json.loads(sw.STATE.read_text())["usage"]["sw"]["usageRetryAt"], 1360)
 
     def test_other_usage_errors_remain_visible_without_growing_backoff(self):
         self.log_in(SW, "sw")
@@ -383,7 +460,7 @@ class SwitchTest(Home):
             self.assertEqual(self.measure(LOW), sw.RETRY)
 
         self.assertEqual(stderr.getvalue(), "HTTP 401\n")
-        state = json.loads(sw.STATE.read_text())
+        state = json.loads(sw.STATE.read_text())["usage"]["sw"]
         self.assertNotIn("usageBackoff", state)
         self.assertEqual(state["usageRetryAt"], 1060)
 
@@ -397,15 +474,18 @@ class SwitchTest(Home):
         ):
             self.assertEqual(self.measure(LOW), sw.RETRY)
 
-        for now, expected in ((1001, "Next attempt after"), (1300, "Retry pending")):
+        for now in (1001, 1300):
             with (
                 mock.patch.object(sw.time, "time", return_value=now),
+                mock.patch.object(
+                    sw, "oauth_get", side_effect=sw.UsageUnavailable("HTTP 429", rate_limited=True)
+                ),
                 mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
             ):
                 sw.cmd_status(None)
 
             self.assertIn("HTTP 429", stdout.getvalue())
-            self.assertIn(expected, stdout.getvalue())
+            self.assertIn("Next attempt after", stdout.getvalue())
 
     def test_verified_profile_is_reused_only_for_the_same_token(self):
         self.log_in(SW, "sw")
@@ -468,6 +548,340 @@ class SwitchTest(Home):
                     self.assertRaises(SystemExit, sw.main)
 
         self.assertEqual(self.live_account(), SW)
+
+
+class ReserveSwitchTest(Home):
+    def setUp(self):
+        super().setUp()
+        self.save("sw", SW, "sw-old")
+        self.save("personal", PERSONAL, "me")
+        self.log_in(SW, "sw")
+        self.set_plan("sw", "team", "default_raven")
+        self.set_plan("personal", "max", "default_claude_max_20x")
+        self.usage_by_token = {"at-sw": windows(99, 17), "at-me": windows(14, 97)}
+        sw.STATE.write_text(
+            json.dumps({"full": {"sw": {"five_hour": 5000}, "personal": {"seven_day": 6000}}})
+        )
+
+    def snapshot(self):
+        with (
+            mock.patch.object(sw.time, "time", return_value=1000),
+            mock.patch("sys.stdout", io.StringIO()),
+        ):
+            sw.cmd_status(None)
+
+    def test_switches_to_personal_reserve_and_returns_to_work_after_reset(self):
+        with mock.patch.object(sw.time, "time", return_value=1000):
+            self.assertEqual(self.measure([]), sw.RETRY)
+
+        self.assertEqual(self.live_account(), PERSONAL)
+        with mock.patch.object(sw.time, "time", return_value=1061):
+            self.assertEqual(self.measure([]), sw.RETRY)
+
+        self.assertEqual(self.live_account(), PERSONAL)
+        self.usage_by_token["at-sw"] = windows(0, 17)
+        with mock.patch.object(sw.time, "time", return_value=1122):
+            self.assertEqual(self.measure([]), sw.RETRY)
+
+        self.assertEqual(self.live_account(), SW)
+
+    def test_status_cache_can_trigger_switch_without_another_usage_request(self):
+        self.snapshot()
+        with (
+            mock.patch.object(sw.time, "time", return_value=1001),
+            mock.patch.object(sw, "oauth_get") as request,
+        ):
+            self.assertEqual(self.measure([]), sw.RETRY)
+
+        request.assert_not_called()
+        self.assertEqual(self.live_account(), PERSONAL)
+
+    def test_rate_limited_usage_does_not_prevent_using_recent_verified_reserve(self):
+        self.snapshot()
+        with (
+            mock.patch.object(sw.time, "time", return_value=1061),
+            mock.patch.object(
+                sw, "oauth_get", side_effect=sw.UsageUnavailable("HTTP 429", rate_limited=True)
+            ) as request,
+        ):
+            self.assertEqual(self.measure([]), sw.RETRY)
+
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(self.live_account(), PERSONAL)
+
+    def test_old_current_reading_during_429_can_use_a_fresh_alternative(self):
+        self.snapshot()
+        original = self.oauth_get
+
+        def request(path, token):
+            if token == "at-sw":
+                raise sw.UsageUnavailable("HTTP 429", rate_limited=True)
+
+            return original(path, token)
+
+        with (
+            mock.patch.object(sw.time, "time", return_value=1400),
+            mock.patch.object(sw, "oauth_get", side_effect=request),
+        ):
+            self.assertEqual(self.measure([]), sw.RETRY)
+
+        self.assertEqual(self.live_account(), PERSONAL)
+        self.assertGreater(json.loads(sw.STATE.read_text())["full"]["sw"]["five_hour"], 1400)
+
+    def test_legacy_429_cooldown_does_not_need_to_expire_before_failover(self):
+        self.snapshot()
+        state = json.loads(sw.STATE.read_text())
+        state["usage"]["sw"].update(
+            checkedAt=600,
+            usageRetryAt=1300,
+            usageError="Account usage check failed (HTTP 429); will retry",
+        )
+        sw.STATE.write_text(json.dumps(state))
+        with (
+            mock.patch.object(sw.time, "time", return_value=1001),
+            mock.patch.object(sw, "oauth_get") as request,
+        ):
+            self.assertEqual(self.measure([]), sw.RETRY)
+
+        request.assert_not_called()
+        self.assertEqual(self.live_account(), PERSONAL)
+
+    def test_alternative_with_an_authentication_error_is_not_used(self):
+        self.snapshot()
+        original = self.oauth_get
+
+        def request(path, token):
+            if token == "at-me":
+                raise sw.UsageUnavailable("HTTP 401")
+
+            return original(path, token)
+
+        with (
+            mock.patch.object(sw.time, "time", return_value=1061),
+            mock.patch.object(sw, "oauth_get", side_effect=request),
+        ):
+            self.assertEqual(self.measure([]), sw.RETRY)
+
+        self.assertEqual(self.live_account(), SW)
+
+    def test_exhausted_alternative_is_not_used(self):
+        self.usage_by_token["at-me"] = windows(14, 100)
+        with mock.patch.object(sw.time, "time", return_value=1000):
+            self.assertEqual(self.measure([]), sw.RETRY)
+
+        self.assertEqual(self.live_account(), SW)
+
+    def test_an_expired_cached_reserve_is_not_used_during_api_cooldown(self):
+        self.usage_by_token["at-me"] = [
+            limit | {"resetsAt": "1970-01-01T00:20:00Z"} for limit in windows(14, 97)
+        ]
+        self.snapshot()
+        original = self.oauth_get
+
+        def request(path, token):
+            if token == "at-me":
+                raise sw.UsageUnavailable("HTTP 429", rate_limited=True)
+
+            return original(path, token)
+
+        with (
+            mock.patch.object(sw.time, "time", return_value=1201),
+            mock.patch.object(sw, "oauth_get", side_effect=request),
+        ):
+            self.assertEqual(self.measure([]), sw.RETRY)
+
+        self.assertEqual(self.live_account(), SW)
+
+    def test_cache_for_another_token_cannot_trigger_a_switch(self):
+        self.snapshot()
+        self.keychain[(sw.SAVED, "personal")]["login"]["claudeAiOauth"]["accessToken"] = "at-new"
+        with (
+            mock.patch.object(sw.time, "time", return_value=1001),
+            mock.patch.object(sw, "oauth_get") as request,
+        ):
+            self.assertEqual(self.measure([]), sw.RETRY)
+
+        request.assert_not_called()
+        self.assertEqual(self.live_account(), SW)
+
+
+class StatusTest(Home):
+    def setUp(self):
+        super().setUp()
+        self.save("sw", SW, "sw-old")
+        self.save("personal", PERSONAL, "me")
+        self.log_in(SW, "sw-live")
+
+    def status(self, now: float = 1000) -> str:
+        with (
+            mock.patch.object(sw.time, "time", return_value=now),
+            mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
+        ):
+            sw.cmd_status(None)
+
+        return stdout.getvalue()
+
+    def test_status_reads_both_accounts_with_the_latest_live_token_without_switching(self):
+        original = self.oauth_get
+
+        def request(path, token):
+            if path == "usage":
+                return {
+                    "seven_day": {
+                        "utilization": 87.5 if token == "at-sw-live" else 100,
+                        "resets_at": "1970-01-01T02:00:00Z",
+                    },
+                    "five_hour": {"utilization": 30, "resets_at": "1970-01-01T01:00:00Z"},
+                }
+
+            return original(path, token)
+
+        before = dict(self.keychain)
+        full = {"sw": {"seven_day": 7200}}
+        sw.STATE.write_text(json.dumps({"full": full}))
+        with mock.patch.object(sw, "oauth_get", side_effect=request) as get:
+            output = self.status()
+
+        self.assertIn("* sw: me@work [Unknown]\n    Weekly: 12.5% left, resets", output)
+        self.assertIn("  personal: me@home [Unknown]\n    Weekly: 0% left, resets", output)
+        self.assertIn("(in 1h 43m)", output)
+        self.assertIn("5-hour: 70% left", output)
+        self.assertEqual(
+            [call.args[1] for call in get.call_args_list], ["at-sw-live"] * 2 + ["at-me"] * 2
+        )
+        self.assertEqual(self.keychain, before)
+        self.assertEqual(self.live_account(), SW)
+        state = json.loads(sw.STATE.read_text())
+        self.assertEqual(state["full"], full)
+        self.assertNotIn("at-sw-live", json.dumps(state))
+        self.assertNotIn("at-me", json.dumps(state))
+
+    def test_one_unavailable_account_does_not_hide_the_other(self):
+        original = self.oauth_get
+
+        def request(path, token):
+            if token == "at-sw-live":
+                raise sw.UsageUnavailable("HTTP 401")
+
+            return original(path, token)
+
+        with mock.patch.object(sw, "oauth_get", side_effect=request):
+            output = self.status()
+
+        self.assertIn("Weekly: remaining unknown", output)
+        self.assertIn("HTTP 401", output)
+        self.assertIn("  personal: me@home [Unknown]\n    Weekly: 80% left", output)
+
+    def test_failed_refresh_keeps_the_last_reading_and_its_age(self):
+        self.status()
+        with mock.patch.object(
+            sw, "oauth_get", side_effect=sw.UsageUnavailable("network unavailable")
+        ):
+            output = self.status(1120)
+
+        self.assertIn("Weekly: 80% left", output)
+        self.assertIn("(2m ago)", output)
+        self.assertIn("network unavailable; showing saved data", output)
+        self.assertIn("Next attempt after", output)
+        state = json.loads(sw.STATE.read_text())
+        self.assertEqual(state["usage"]["sw"]["checkedAt"], 1000)
+
+    def test_status_and_measure_share_cache_and_retry_delays(self):
+        with mock.patch.object(sw.time, "time", return_value=1000):
+            self.assertIsNone(self.measure(LOW))
+
+        with mock.patch.object(sw, "oauth_get", wraps=self.oauth_get) as get:
+            output = self.status(1001)
+
+        self.assertIn("Weekly: 80% left", output)
+        self.assertEqual([call.args[1] for call in get.call_args_list], ["at-me", "at-me"])
+        with (
+            mock.patch.object(sw, "oauth_get") as get,
+            mock.patch.object(sw.time, "time", return_value=1002),
+        ):
+            self.status(1002)
+            self.assertEqual(self.measure(LOW), sw.RETRY)
+
+        get.assert_not_called()
+
+    def test_expired_window_is_unknown_until_a_successful_refresh(self):
+        self.usage = [{"kind": "seven_day", "percentUsed": 99, "resetsAt": "1970-01-01T00:20:00Z"}]
+        self.status()
+        with mock.patch.object(
+            sw, "oauth_get", side_effect=sw.UsageUnavailable("HTTP 429", rate_limited=True)
+        ):
+            output = self.status(1300)
+
+        self.assertIn("Weekly: remaining unknown, last reset", output)
+        self.assertIn("(passed)", output)
+        self.assertNotIn("1% left", output)
+        self.assertNotIn("100% left", output)
+
+    def test_old_state_keeps_reset_times_without_inventing_percentages(self):
+        sw.STATE.write_text(
+            json.dumps(
+                {
+                    "full": {"sw": {"seven_day": 7200}},
+                    "verifiedLogin": SW,
+                    "usageError": "HTTP 429",
+                    "usageBackoff": 300,
+                    "usageRetryAt": 1300,
+                }
+            )
+        )
+        with mock.patch.object(sw, "oauth_get", wraps=self.oauth_get) as get:
+            output = self.status()
+
+        self.assertIn("Weekly: remaining unknown, resets", output)
+        self.assertIn("(last known)", output)
+        self.assertIn("HTTP 429", output)
+        self.assertEqual([call.args[1] for call in get.call_args_list], ["at-me", "at-me"])
+        state = json.loads(sw.STATE.read_text())
+        self.assertEqual(state["usage"]["sw"]["usageBackoff"], 300)
+        self.assertNotIn("usageRetryAt", state)
+
+    def test_a_replaced_saved_account_cannot_inherit_another_accounts_usage(self):
+        self.status()
+        replacement = PERSONAL | {"accountUuid": "a-new"}
+        self.save("personal", replacement, "new")
+        with mock.patch.object(sw, "oauth_get", side_effect=sw.UsageUnavailable("HTTP 401")):
+            output = self.status(1001)
+
+        personal = output.split("  personal:", 1)[1]
+        self.assertIn("Weekly: remaining unknown", personal)
+        self.assertNotIn("80% left", personal)
+        self.assertNotIn("Checked", personal)
+
+    def test_a_keychain_failure_does_not_hide_other_accounts(self):
+        original = sw.keychain_read
+
+        def read(service, account):
+            if service == sw.SAVED and account == "personal":
+                raise SystemExit("Keychain unavailable")
+
+            return original(service, account)
+
+        with mock.patch.object(sw, "keychain_read", side_effect=read):
+            output = self.status()
+
+        self.assertIn("Weekly: 80% left", output)
+        self.assertIn("personal: Keychain unavailable", output)
+
+    def test_a_missing_access_token_is_reported_per_account(self):
+        self.keychain[(sw.SAVED, "personal")]["login"] = {}
+        output = self.status()
+        self.assertIn("Weekly: 80% left", output)
+        self.assertIn("Account usage unavailable: no access token", output)
+
+    def test_status_shows_subscription_and_normalized_reserve(self):
+        self.set_plan("sw", "team", "default_raven")
+        self.set_plan("personal", "max", "default_claude_max_20x")
+        self.usage_by_token = {"at-sw-live": windows(99, 17), "at-me": windows(14, 97)}
+        output = self.status()
+        self.assertIn("[Team]", output)
+        self.assertIn("Reserve: ~1.25 Pro units (estimate)", output)
+        self.assertIn("[Max 20x]", output)
+        self.assertIn("Reserve: ~60 Pro units (estimate)", output)
 
 
 class AddTest(Home):
