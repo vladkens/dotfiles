@@ -447,9 +447,9 @@ BAD = {"FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"
 
 
 def stop() -> int:
-    """Blocks the end of a turn while an open PR of this repository, whose head is checked out
-    in one of its worktrees (pushed work of ours), has CI running, or once when it failed. Fails
-    open on its own errors."""
+    """Blocks the end of a turn while an open, non-draft PR of this repository, whose head is
+    checked out in one of its worktrees (pushed work of ours), has CI running, or once when it
+    failed. Fails open on its own errors."""
     try:
         pld = json.load(sys.stdin)
         cwd = Path(pld.get("cwd") or ".")
@@ -458,14 +458,14 @@ def stop() -> int:
             return 0
 
         heads = set(re.findall(r"^HEAD (\w+)$", git("worktree", "list", "--porcelain", cwd=top), re.M))
-        fields = "number,headRefOid,statusCheckRollup"
+        fields = "number,isDraft,headRefOid,statusCheckRollup"
         out = subprocess.run(
             ["gh", "pr", "list", "--state", "open", "--json", fields],
             cwd=top, capture_output=True, text=True, timeout=20, check=True,
         ).stdout
         running, failed = [], []
         for pr in json.loads(out):
-            if pr["headRefOid"] not in heads:
+            if pr.get("isDraft") or pr["headRefOid"] not in heads:
                 continue
 
             for c in pr["statusCheckRollup"]:
