@@ -1,0 +1,11 @@
+{
+  "font_face": "JetBrains Mono",
+  "font_size": 13,
+  "tab_size": 2,
+  "theme": "auto",
+  "editor_argument_format": "-a ${file}:${line}:${col}",
+  "editor_path": "/opt/homebrew/bin/zed",
+  "expand_merge_commits_by_default": false,
+  "time_format": "24h",
+  "side_bar_layout": "locations_as_column",
+}

@@ -1,7 +1,6 @@
+.backup/
 .cache/
-.dotter/cache.toml
-.dotter/cache/
-.dotter/local.toml
 .DS_Store
 output/
 __pycache__/
+/.profile

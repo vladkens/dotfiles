@@ -46,7 +46,7 @@ REPOS = {
     "unjar": ["test"],
     "badgelib": ["test"],
     "twscrape": [],  # matrix
-    "ghstats": ["build"],
+    "ghstats": ["test"],
     "apigen-ts": [],  # matrix
 }
 
@@ -200,7 +200,9 @@ class Repo:
         body = {key: want for key, want, _ in SETTINGS if r.get(key) != want}
         shown = [onoff(want, what) for key, want, what in SETTINGS if key in body and what]
         if {"squash_merge_commit_title", "squash_merge_commit_message"} & body.keys():
-            body |= {key: want for key, want, _ in SETTINGS if key.startswith("squash_merge_commit")}
+            body |= {
+                key: want for key, want, _ in SETTINGS if key.startswith("squash_merge_commit")
+            }
             shown.append("squash commit: the PR title only")
 
         sa = r.get("security_and_analysis") or {}
@@ -250,7 +252,9 @@ class Repo:
             TAGS,
             "add rule: release tags vX.Y.Z can't be deleted or moved",
         )
-        return [f"extra rule '{n}' kept: delete it if it only repeats the main rule" for n in existing]
+        return [
+            f"extra rule '{n}' kept: delete it if it only repeats the main rule" for n in existing
+        ]
 
     def plan_ruleset(self, summary: dict | None, want: dict, created: str) -> None:
         if summary is None:

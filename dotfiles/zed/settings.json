@@ -20,8 +20,11 @@
   "buffer_line_height": "standard",
   "auto_update": false,
   "auto_install_extensions": {
+    "fish": true,
     "git-firefly": true,
-    "make": true
+    "html": true,
+    "make": true,
+    "toml": true
   },
   "telemetry": {
     "diagnostics": false,

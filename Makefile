@@ -1,12 +1,19 @@
-.PHONY: prepare deploy launchd
+.PHONY: prepare plan apply test
+$(shell scripts/git-setup.sh)
 
 prepare:
 	uvx ruff format .
 	pnpm dlx prettier --write --log-level warn .
 
-deploy:
-	./scripts/deploy.sh
+plan: # show what apply would change
+	./config.py
 
-launchd: # install and reload managed launchd jobs
-	./scripts/launchd-hourly-snapshot.py
-	./scripts/launchd-key-remapping.py
+apply: # apply the plan on this machine
+	./config.py apply
+
+test:
+	/usr/bin/python3 dotsync/test_engine.py
+	uv run --script claude/mods/account-switch/test-account-switch.py
+	uv run --script claude/mods/pr-gate/test-pr-gate.py
+	claude plugin test claude/mods/account-switch
+	claude plugin test claude/mods/pr-gate

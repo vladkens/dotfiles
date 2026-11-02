@@ -6,6 +6,7 @@
 # Chrome's cookies get past YouTube's sign-in check.
 set -eu
 [ $# -ge 1 ] || { echo "usage: yt-video URL [NAME]" >&2; exit 2; }
+command -v yt-dlp >/dev/null || { echo "yt-dlp is required: brew install yt-dlp ffmpeg" >&2; exit 1; }
 
 path=$(yt-dlp --quiet --no-warnings --cookies-from-browser chrome --no-playlist \
   -f 'bestvideo+bestaudio/best' \

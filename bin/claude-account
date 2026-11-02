@@ -1,3 +1,4 @@
 #!/bin/sh
 # Save, switch or show the Claude subscription accounts of the default profile (~/.claude).
-exec uv run --script "$HOME/.claude/account-switch/account-switch.py" "$@"
+script_dir=$(dirname -- "$(realpath "$0")")
+exec uv run --script "$script_dir/../claude/mods/account-switch/account-switch.py" "$@"

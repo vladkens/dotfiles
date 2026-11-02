@@ -1,0 +1,5 @@
+{
+  "name": "pr-gate",
+  "version": "0.1.0",
+  "description": "Gate git pushes on a Codex review and keep the turn going while the pushed PR's CI runs"
+}

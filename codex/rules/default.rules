@@ -72,7 +72,6 @@ prefix_rule(pattern=["uvx", "ruff"], decision="allow")
 # Codex tooling
 prefix_rule(pattern=["~/.agents/skills/git-commit-msg/scripts/collect-context.py"], decision="allow")
 prefix_rule(pattern=["~/.agents/skills/git-changelog/scripts/collect-git-info.py"], decision="allow")
-prefix_rule(pattern=["codex", "plugin", "add", "codex-tools@dotfiles"], decision="allow")
 prefix_rule(pattern=["node", [
   "~/.codex/skills/.system/openai-docs/scripts/fetch-codex-manual.mjs"
 ]], decision="allow")

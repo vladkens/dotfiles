@@ -1,0 +1,5 @@
+{
+  "name": "agent-id",
+  "version": "0.1.0",
+  "description": "/agent-id shows the current session ID and copies it to the clipboard"
+}

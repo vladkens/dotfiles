@@ -80,9 +80,6 @@ enabled = false
 [plugins."template-creator@openai-primary-runtime"]
 enabled = false
 
-[plugins."codex-tools@dotfiles"]
-enabled = true
-
 [features]
 daemon_auto_start = false
 js_repl = false
@@ -94,17 +91,3 @@ experimental_mode = true
 
 [notice]
 hide_rate_limit_model_nudge = true
-
-[marketplaces.dotfiles]
-source_type = "local"
-
-[hooks.state]
-
-[hooks.state."codex-tools@dotfiles:hooks/hooks.json:pre_tool_use:0:0"]
-trusted_hash = "sha256:26b1a4f0b9a097e8f46d0db39efb93e7bb8c906c4f2ef092680c167deb2b1576"
-
-[hooks.state."codex-tools@dotfiles:hooks/hooks.json:permission_request:0:0"]
-trusted_hash = "sha256:693ae2289c4e6978086fca47bc1bcf79d7bf8db69b10d555db7b543bff008d31"
-
-[hooks.state."codex-tools@dotfiles:hooks/hooks.json:session_start:0:0"]
-trusted_hash = "sha256:4a5e48692ec1ead1967ced59a8ac89aa20067e79855e55f97711d22ffa04121c"

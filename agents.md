@@ -1,29 +1,17 @@
-## Repository scope
+## Layout
 
-This repository is the source of truth for personal dotfiles and agent extensions installed across one or more computers. The instructions in this file apply to both Codex and Claude unless a section explicitly says otherwise.
+Personal dotfiles and agent extensions shared across machines: app and system configs in `dotfiles/<app>/`, Claude and Codex config and extensions in `claude/` and `codex/`, instructions and skills shared by both in `agents/agents.md` and `agents/skills/`. Changes under `agents/`, `claude/` and `codex/` change global agent behavior.
 
-- Store ordinary application and system configuration under `dotfiles/`, grouped by application; store agent configuration and extensions under the top-level `claude/` and `codex/` directories, and global instructions and skills shared by both agents under `agents/agents.md` and `agents/skills/`.
-- Treat changes under `agents/`, `claude/`, and `codex/` as changes to global tooling and behavior.
-
-## Writing instructions
-
-- Write one coherent rule per bullet; separate unrelated policies and combine fragments that govern the same decision.
-- Use concise, concrete wording with only enough context to preserve behavior and clarify real boundaries.
-- Preserve approved structure and meaning when simplifying instructions unless the user asks to change them.
+- Deploy everything through the modules in `config.py`: add each new config or tool to a module, link files via `files`, macOS settings via `defaults`, launchd jobs via `launchd`; never copy files in `setup`, and keep `setup` safe to repeat.
 
 ## Python scripts
 
-- Never use `from __future__ import annotations` in Python scripts.
-- Name Python scripts with kebab-case filenames.
-- Write Python scripts with inline uv script metadata so they run with `uv run --script <path>`.
+- Name scripts in kebab-case, give them inline uv metadata (`uv run --script <path>`), and never use `from __future__ import annotations`.
+- Exceptions: `config.py` and `dotsync/` run on the macOS system Python 3.9 before uv exists, so their runnable scripts start with `#!/usr/bin/python3`, have no uv metadata, use snake_case names and may use `from __future__`; `scripts/git-diff-codex-config.py` is Git's clean filter for `codex/config.toml`, so it uses `#!/usr/bin/env python3`, the standard library only and no uv metadata.
 
 ## Skills
 
-Define each shared skill in `agents/skills/<name>/SKILL.md` without agent-specific syntax; omit `agents/openai.yaml` in this repository.
-
-### Description format
-
-A skill `description` is its action contract and trigger. Use this structure:
+Define each shared skill in `agents/skills/<name>/SKILL.md` without agent-specific syntax and without `agents/openai.yaml`. Its `description` is the action contract and trigger, matched to the user's intent rather than a keyword; workflow steps go in the body:
 
 ```yaml
 description: <Action> <concrete object> [with/from/into <essential context or result>]. Use when the user [explicitly] asks to <matching intent> [or <equivalent intent>].
@@ -34,7 +22,3 @@ Add the nearest exclusion when it prevents a likely false trigger:
 ```yaml
 description: <Action> <concrete object>. Use only when <positive trigger>, not when <nearest confusable intent>.
 ```
-
-- Start with a direct action verb and name the exact object plus only essential context.
-- Match the user's intent rather than an isolated keyword.
-- Keep workflow steps and detailed behavior in the `SKILL.md` body.

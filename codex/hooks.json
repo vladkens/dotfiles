@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "command": "\"$HOME/.codex/hooks/permission-policy.py\"",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "^Bash$"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "\"$HOME/.codex/hooks/command-rewrite.py\"",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "^Bash$"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "python3 -c 'import json, sys; print(json.load(sys.stdin)[\"session_id\"])' > \"${CODEX_SESSION_FILE:-/dev/null}\"",
+            "timeout": 3,
+            "type": "command"
+          }
+        ],
+        "matcher": "^(startup|resume)$"
+      }
+    ]
+  }
+}

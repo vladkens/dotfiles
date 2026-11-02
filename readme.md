@@ -1,50 +1,33 @@
 # dotfiles
 
-Personal application configs and agent settings, managed with Dotter.
+My macOS configs, tools and agent settings, deployed by [config.py](config.py).
 
-## Setup
+## New Mac
 
-Install Homebrew, clone this repository, then install Dotter:
-
-```sh
-brew install dotter
-```
-
-Create `.dotter/local.toml` (ignored by Git) to select a profile:
-
-```toml
-packages = ["air-m5"]
-```
-
-Available profiles:
-
-- `air-m5`
-- `pro-m2`
-
-Profile contents are defined in `.dotter/global.toml`.
-
-`develop` installs rustup, uv, and pnpm, configures Fish paths, and installs
-Rust stable, the default stable Python supplied by uv, and Node.js LTS.
-
-`containers` installs Docker, Compose, Buildx, and Colima. Start the container
-engine with `colima-up` (4 CPUs, 8 GiB, Rosetta); stop it with `colima stop`.
-
-Preview config changes, then install the selected groups and link their configs:
+Install [Homebrew](https://brew.sh), then:
 
 ```sh
-dotter deploy --dry-run
-make deploy
+git clone https://github.com/vladkens/dotfiles.git ~/Code/dotfiles
+cd ~/Code/dotfiles
+echo <name> > .profile  # once: this Mac's profile, air or pro
+make plan               # see what will change
+make apply              # do it (asks "yes" first)
 ```
 
-`make deploy` can overwrite existing target files (`--force`).
+The profile is kept in the untracked `.profile`; edit it to switch.
 
-## Files
+If `apply` stops on a file that differs, `./config.py apply --force` moves the old one to `.backup/` and links the repository version.
 
-- `.dotter/global.toml`: profiles, groups, and config destinations.
-- `.dotter/Brewfile-*`: programs to install for each group.
-- `dotfiles/`: application configs.
-- `claude/`, `codex/`: agent settings and extensions.
-- `bin/`: personal CLI tools; `scripts/`: repository utilities.
+## Adding something
+
+Everything is listed in `config.py`: add a program or config file to the matching module (or a new module), and make sure that module is in each profile at the bottom that needs it. Then `make apply`.
+
+## Folders
+
+- `dotfiles/`: app configs.
+- `claude/`, `codex/`, `agents/`: agent settings and skills.
+- `bin/`: my CLI tools.
+- `dotsync/`, `scripts/`: what makes this repository work.
 
 ## Codex Config Notes
 

@@ -2,13 +2,14 @@
 
 """Remove local and volatile values from Codex config comparisons in Git.
 
-Git runs this script as the ``codex-config`` clean filter configured in the
-pre-deploy hook and .gitattributes. It reads ``config.toml`` from stdin and writes a
-stable representation to stdout, excluding:
+Git runs this script as the ``codex-config`` clean filter configured by
+scripts/git-setup.sh (which every ``make`` call runs) and .gitattributes. It reads ``config.toml`` from
+stdin and writes a stable representation to stdout, excluding:
 
 - root-level model selection settings;
 - generated marketplace metadata;
-- local ``[projects."..."]`` trust sections.
+- local ``[projects."..."]`` trust sections;
+- local ``[hooks.state]`` hook trust sections.
 
 The working copy is not modified. The filter tracks the current TOML section
 without parsing or serializing values, so comments and formatting remain
@@ -34,6 +35,10 @@ def filter_config(lines: list[str]) -> str:
 
         # Project trust is local to a machine, so discard the whole section.
         if section == "projects":
+            continue
+
+        # Hook trust hashes are local too, but other hook tables are shared.
+        if section == "hooks" and subsection.partition(".")[0] == "state":
             continue
 
         # Model selection is local, but only when defined at the document root.

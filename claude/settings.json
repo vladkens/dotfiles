@@ -1,8 +1,7 @@
 {
   "cleanupPeriodDays": 9999,
   "env": {
-    "DISABLE_AUTOUPDATER": "1",
-    "CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/account-switch"
+    "DISABLE_AUTOUPDATER": "1"
   },
   "attribution": {
     "commit": "",
@@ -50,46 +49,6 @@
             "type": "command",
             "command": "jq -c '.tool_input as $input | (.cwd // \"\") as $cwd | \"^[ \\t]*git[ \\t]+-C[ \\t]+(?<path>[^[:space:]]+)\" as $pattern | (try ($input.command | capture($pattern)) catch {}) | select((.path // \"\") as $path | $path == \".\" or $path == \"./\" or ($path | rtrimstr(\"/\")) == ($cwd | rtrimstr(\"/\"))) | {hookSpecificOutput:{hookEventName:\"PreToolUse\",updatedInput:($input | .command |= sub($pattern; \"git\"))}}'",
             "if": "Bash(git -C *)"
-          },
-          {
-            "type": "command",
-            "command": "~/.local/bin/pr-gate --hook",
-            "if": "Bash(git push*)"
-          },
-          {
-            "type": "command",
-            "command": "~/.local/bin/pr-gate --hook",
-            "if": "Bash(git -C * push*)"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.local/bin/pr-gate --hook",
-            "if": "Bash(git push*)",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "~/.local/bin/pr-gate --hook",
-            "if": "Bash(git -C * push*)",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.local/bin/pr-gate --stop",
-            "timeout": 30
           }
         ]
       }
@@ -100,11 +59,7 @@
     "command": "~/.claude/statusline.sh",
     "padding": 0
   },
-  "enabledPlugins": {
-    "clangd-lsp@claude-plugins-official": true,
-    "swift-lsp@claude-plugins-official": true,
-    "aikido@claude-plugins-official": true
-  },
+  "enabledPlugins": {},
   "extraKnownMarketplaces": {},
   "spinnerTipsEnabled": false,
   "effortLevel": "xhigh",
