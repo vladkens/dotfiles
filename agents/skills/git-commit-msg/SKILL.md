@@ -65,7 +65,7 @@ Produce **one** commit message that:
 - Uses a scope only when the project history establishes its syntax
 - Uses lowercase for type and scope
 - Matches the project's capitalization; otherwise starts the description with a lowercase verb
-- Is concise: subject line ≤ 72 characters
+- Is short: one change in at most ~50 characters, no second clause after `;` or `,`
 - Matches the style and verbosity observed in Step 2
 
 If the changes span multiple concerns, pick the dominant one for the subject. Do not add a body unless the change is genuinely non-obvious. Inspect recent commit bodies separately before adding one.

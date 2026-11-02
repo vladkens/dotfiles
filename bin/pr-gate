@@ -7,11 +7,15 @@
 
   pr-gate                    review what changed since the last review, as much as it needs
   pr-gate --accept REASON …  reject the open findings, one reason per finding
-  pr-gate --hook             Claude Code PreToolUse hook on `git push`: denies the push until
-                             pr-gate has passed the branch's current changes
-  pr-gate --stop             Claude Code Stop hook: keeps the turn going while CI runs or failed
-                             on an open PR whose head is checked out here, so nobody hears
-                             "done" before CI is green
+  pr-gate claim PR|BRANCH    this Claude Code session watches that PR's CI from now on
+  pr-gate release PR|BRANCH  nobody watches it any more
+  pr-gate status [--all]     what this session owns, or (--all) every owner in this repository
+  pr-gate --hook             Claude Code hook on `git push`: before it (PreToolUse) denies the
+                             push until pr-gate has passed the branch's current changes; after
+                             it (PostToolUse) the session owns the branch it pushed
+  pr-gate --stop             Claude Code Stop hook: keeps the turn going while CI runs on an open
+                             PR this session owns, or once per pushed commit when it failed, so
+                             nobody hears "done" before CI is green
 
 What counts is the branch's own code changes against the default branch: the changed lines of
 code files, without docs, lockfiles, tests, assets and whitespace. They are compared as a set of
@@ -22,17 +26,28 @@ delta (low effort) answers OK, FIX or DEEP. A deep review of the whole branch (h
 instead when the quick one says DEEP, the delta touches a risky path or adds `unsafe`, or the code
 changed since the last deep review passed DEEP_LINES; at most DEEP_MAX per branch. A review that
 can't run blocks, for the person to look at. State is kept per branch in <git common dir>/pr-gate/.
+
+A session owns a branch when it pushed it or claimed it last (last one wins; subagents push for
+their parent session), for OWN_TTL after that; only its owner's Stop waits for the branch's CI.
+Owners of every repository are in OWNERS (PR_GATE_OWNERS overrides the path); a merged or closed
+PR leaves it. Without a session id (Codex, a plain terminal) nothing is owned or gated.
 """
 
 import argparse
+import fcntl
 import hashlib
 import json
+import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
+import time
 from collections import Counter
-from dataclasses import dataclass
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from datetime import datetime
 from fnmatch import fnmatchcase
 from pathlib import Path
 from urllib.parse import quote
@@ -58,6 +73,8 @@ STYLE_LINES = 300  # added code lines in the branch, mostly new rather than rewr
 DEEP_LINES = 400  # code lines changed since the last deep review
 DEEP_MAX = 2
 TIMEOUT = {"low": 5 * 60, "high": 9 * 60}  # below the 10 minutes an agent's command can run
+OWNERS = Path(os.environ.get("PR_GATE_OWNERS") or Path.home() / ".cache/pr-gate/owners.json")
+OWN_TTL = 12 * 3600  # a session stops watching a branch this long after its last push or claim
 
 QUICK = """Quick review of a change. See it with: {diff}
 Look only for real defects the change brings: bugs, wrong logic, unhandled errors, security
@@ -401,25 +418,46 @@ def accept(repo: Repo, reasons: list[str]) -> int:
     return passed(repo, fp, "findings rejected")
 
 
+def push_cwd(pld: dict) -> tuple[str, Path] | None:
+    """The arguments of the `git push` in a Bash call and the directory it pushes from; None when
+    it pushes nothing to gate (no push, a delete, tags)."""
+    cmd = pld["tool_input"]["command"]
+    # Claude Code runs the hook for compound commands its `if` can't parse (redirects, `$(…)`): no
+    # push in them, nothing to gate.
+    push = PUSH.search(cmd)
+    if push is None:
+        return None
+
+    # The push's own arguments end at the next command (`2>&1` and `&>` are redirects).
+    args = re.split(r"(?<![<>])[;&|\n](?!>)", cmd[push.end() :], maxsplit=1)[0]
+    if re.search(r"\s(--delete|-d|--tags)\b", args):
+        return None
+
+    # `cd <dir> && git push` and `git -C <dir> push` push another repository than cwd's.
+    cwd = Path(pld.get("cwd") or ".")
+    for d in re.findall(r"(?:^|[;&|(]\s*)cd\s+([^\s;&|]+)", cmd[: push.start()]):
+        cwd = cwd / Path(d.strip("'\"")).expanduser()
+
+    for d in re.findall(r"-C\s+(\S+)", push[1]):
+        cwd = cwd / Path(d.strip("'\"")).expanduser()
+
+    return args, cwd
+
+
 def hook() -> int:
-    """Denies a `git push` of a branch whose changes pr-gate hasn't passed. Fails open on its
-    own errors, so a broken gate doesn't stop the work."""
+    """Before a push: denies a `git push` of a branch whose changes pr-gate hasn't passed. After
+    it: makes the session the owner of what it pushed. Fails open on its own errors, so a broken
+    gate doesn't stop the work."""
     try:
         pld = json.load(sys.stdin)
-        cmd = pld["tool_input"]["command"]
-        # Claude Code runs the hook for compound commands its `if` can't parse (redirects,
-        # `$(…)`): no push in them, nothing to gate.
-        push = PUSH.search(cmd)
-        if push is None or re.search(r"\s(--delete|-d|--tags)\b", cmd):
+        found = push_cwd(pld)
+        if found is None:
             return 0
 
-        # `cd <dir> && git push` and `git -C <dir> push` push another repository than cwd's.
-        cwd = Path(pld.get("cwd") or ".")
-        for d in re.findall(r"(?:^|[;&|(]\s*)cd\s+([^\s;&|]+)", cmd[: push.start()]):
-            cwd = cwd / Path(d.strip("'\"")).expanduser()
-
-        for d in re.findall(r"-C\s+(\S+)", push[1]):
-            cwd = cwd / Path(d.strip("'\"")).expanduser()
+        args, cwd = found
+        event = pld.get("hook_event_name", "PreToolUse")
+        if event != "PreToolUse":
+            return pushed(pld, args, cwd) if event == "PostToolUse" else 0
 
         repo = Repo.open(cwd)
         if repo is None:
@@ -441,55 +479,294 @@ def hook() -> int:
     return 0
 
 
+# MARK: Owners
+
+SLUG = re.compile(r"github\.com[:/](vladkens/[^/\s]+?)(?:\.git)?/?$")
+# What a push prints when it didn't go through.
+PUSH_FAILED = re.compile(r"\[(?:remote )?rejected\]|error: failed to push|^fatal:", re.MULTILINE)
+PR_FIELDS = "number,state,isDraft,headRefName,headRefOid,closedAt,statusCheckRollup"
 # A check still running, and one that ended badly (check runs' conclusions, statuses' states).
 WAITING = {"QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "REQUESTED", "EXPECTED"}
 BAD = {"FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "ERROR"}
+STUCK = 2 * 3600  # CI still waiting this long after the last push or claim won't finish: no gate
+STOP_TIME = 10  # seconds the Stop hook may take, gh calls and the lock included
+
+
+def gh(*args: str, timeout: float = 15):
+    rs = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=timeout)
+    if rs.returncode:
+        raise RuntimeError(f"gh {' '.join(args[:2])}: {rs.stderr.strip()}")
+
+    return json.loads(rs.stdout)
+
+
+def fresh(entry: dict) -> bool:
+    return time.time() - entry["at"] < OWN_TTL
+
+
+def owners() -> dict:
+    """{git common dir: {branch: {session_id, at, sha, reported}}}, where at is the last push or
+    claim and reported the head whose failed CI the owner was told about; empty when the file is
+    missing or broken."""
+    try:
+        st = json.loads(OWNERS.read_text())
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as e:
+        print(f"pr-gate: ignoring the broken {OWNERS}: {e}", file=sys.stderr)
+        return {}
+
+    if not isinstance(st, dict):
+        return {}
+
+    def ok(e) -> bool:
+        return isinstance(e, dict) and isinstance(e.get("session_id"), str) and isinstance(
+            e.get("at"), (int, float)
+        )
+
+    return {
+        repo: {b: e for b, e in brs.items() if ok(e)}
+        for repo, brs in st.items()
+        if isinstance(brs, dict)
+    }
+
+
+@contextmanager
+def owners_locked(wait: float = 3):
+    """The owners to change in place; saved atomically, without expired entries, on exit. Several
+    sessions write at once, so it holds a lock for as long, waiting for it up to `wait` seconds."""
+    OWNERS.parent.mkdir(parents=True, exist_ok=True)
+    with open(OWNERS.with_suffix(".lock"), "w") as lock:
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"{OWNERS} stays locked")
+
+                time.sleep(0.05)
+
+        st = owners()
+        yield st
+
+        st = {r: x for r, brs in st.items() if (x := {b: e for b, e in brs.items() if fresh(e)})}
+        with tempfile.NamedTemporaryFile("w", dir=OWNERS.parent, delete=False) as f:
+            try:
+                f.write(json.dumps(st, indent=2) + "\n")
+                f.close()
+                os.replace(f.name, OWNERS)
+            except BaseException:
+                Path(f.name).unlink(missing_ok=True)
+                raise
+
+
+def refs(args: str, cur: str) -> list[tuple[str, str]]:
+    """The branches a push's arguments update, as (remote branch, local ref); the current branch
+    when they name none; nothing for a dry run."""
+    try:
+        words = shlex.split(args)
+    except ValueError:
+        words = args.split()
+
+    pos, value = [], False  # value: the word is an option's value or a redirect's target
+    for w in words:
+        if w == "--dry-run" or re.fullmatch(r"-[a-zA-Z]*n[a-zA-Z]*", w):
+            return []
+
+        if not value and not w.startswith("-") and not re.match(r"(\d*|&)[<>]", w):
+            pos.append(w)
+
+        opt = w in ("-o", "--push-option", "--repo", "--receive-pack", "--exec")
+        value = opt or bool(re.fullmatch(r"(\d*|&)(>>?|<)", w))  # `> file`, not `>file`, `2>&1`
+
+    rs = []
+    for spec in pos[1:]:
+        src, _, dst = spec.lstrip("+").partition(":")
+        name = (dst or src).removeprefix("refs/heads/")
+        if src and not name.startswith("refs/"):  # `:branch` deletes, refs/tags/… isn't a branch
+            rs.append((cur if name == "HEAD" else name, src))
+
+    return rs if pos[1:] else [(cur, "HEAD")]
+
+
+def pushed(pld: dict, args: str, cwd: Path) -> int:
+    """After a push that looks done (the command succeeded; a push in the background prints
+    nothing yet): this session owns the local branches it pushed."""
+    sid = pld.get("session_id")
+    rs = pld.get("tool_response")
+    out = f"{rs.get('stdout', '')}\n{rs.get('stderr', '')}" if isinstance(rs, dict) else str(rs)
+    if not sid or PUSH_FAILED.search(out):
+        return 0
+
+    # A `cd` in the command may have moved the session's cwd already.
+    cwd = cwd if cwd.is_dir() else Path(pld.get("cwd") or ".")
+    top = Path(git("rev-parse", "--show-toplevel", cwd=cwd))
+    if not OWNER.search(git("config", "--get", "remote.origin.url", cwd=top)):
+        return 0
+
+    try:
+        default = git("rev-parse", "--abbrev-ref", "origin/HEAD", cwd=top).removeprefix("origin/")
+    except RuntimeError:
+        default = "main"
+
+    common = git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=top)
+    cur = git("branch", "--show-current", cwd=top)
+    branches = []
+    for branch, src in refs(args, cur):
+        src = cur if src == "HEAD" else src.removeprefix("refs/heads/")
+        if branch in ("", default) or not src:
+            continue
+
+        try:  # only a local branch: not a tag, a commit or a word the parsing got wrong
+            sha = git("rev-parse", "--verify", "--quiet", f"refs/heads/{src}", cwd=top)
+        except RuntimeError:
+            continue
+
+        branches.append((branch, sha))
+
+    if branches:
+        with owners_locked() as st:
+            for branch, sha in branches:
+                entry = {"session_id": sid, "at": int(time.time()), "sha": sha}
+                st.setdefault(common, {})[branch] = entry
+
+    return 0
+
+
+def checks(pr: dict) -> tuple[list[str], list[str]]:
+    """The PR's checks still running, and those that ended badly."""
+    waiting, bad = [], []
+    for c in pr.get("statusCheckRollup") or []:
+        name = c.get("name") or c.get("context") or "?"
+        state = c.get("status") if c.get("status") != "COMPLETED" else c.get("conclusion")
+        state = state or c.get("state")
+        if state in WAITING:
+            waiting.append(name)
+        elif state in BAD:
+            bad.append(name)
+
+    return waiting, bad
+
+
+@dataclass
+class Owned:
+    """A branch a session owns, and (after look) its PR and CI now."""
+
+    repo: str  # git common dir
+    branch: str
+    entry: dict
+    slug: str = ""
+    pr: dict | None = None
+    state: str = ""  # no PR, merged, closed, draft, running, failed, green, no checks
+    waiting: list[str] = field(default_factory=list)
+    bad: list[str] = field(default_factory=list)
+
+    @property
+    def name(self) -> str:
+        repo = self.slug or Path(self.repo).parent.name
+        return f"{repo}#{self.pr['number']}" if self.pr else f"{repo} {self.branch}"
+
+    @property
+    def done(self) -> bool:
+        return self.state in ("merged", "closed")
+
+    @property
+    def reported(self) -> bool:
+        return self.entry.get("reported") == (self.pr or {}).get("headRefOid")
+
+    def look(self, timeout: float = 15) -> "Owned":
+        m = SLUG.search(git("config", "--get", "remote.origin.url", cwd=self.repo))
+        if m is None:
+            self.state = "not ours"
+            return self
+
+        self.slug = m[1]
+        args = ["--head", self.branch, "--state", "all", "--limit", "5", "--json", PR_FIELDS]
+        prs = gh("pr", "list", "-R", self.slug, *args, timeout=timeout)
+        pr = next((x for x in prs if x["state"] == "OPEN"), prs[0] if prs else None)
+        if pr and pr["state"] != "OPEN":
+            # An older PR of a reused branch name is not this push's.
+            closed = datetime.fromisoformat(pr["closedAt"]).timestamp() if pr.get("closedAt") else 0
+            if pr["headRefOid"] != self.entry.get("sha") and closed < self.entry["at"]:
+                pr = None
+
+        self.pr = pr
+        if pr is None:
+            self.state = "no PR"
+        elif pr["state"] != "OPEN":
+            self.state = pr["state"].lower()
+        elif pr["isDraft"]:
+            self.state = "draft"
+        else:
+            self.waiting, self.bad = checks(pr)
+            ok = "green" if pr.get("statusCheckRollup") else "no checks"
+            self.state = "running" if self.waiting else "failed" if self.bad else ok
+
+        return self
 
 
 def stop() -> int:
-    """Blocks the end of a turn while an open, non-draft PR of this repository, whose head is
-    checked out in one of its worktrees (pushed work of ours), has CI running, or once when it
-    failed. Fails open on its own errors."""
+    """Blocks the end of a turn while an open, non-draft PR this session owns has CI running, or
+    once per pushed head when it failed. Fails open on its own errors."""
     try:
         pld = json.load(sys.stdin)
-        cwd = Path(pld.get("cwd") or ".")
-        top = Path(git("rev-parse", "--show-toplevel", cwd=cwd))
-        if not OWNER.search(git("config", "--get", "remote.origin.url", cwd=top)):
-            return 0
+        sid = pld.get("session_id")
+        mine = [
+            Owned(repo, branch, e)
+            for repo, brs in owners().items()
+            for branch, e in brs.items()
+            if sid and e["session_id"] == sid and fresh(e)
+        ]
+        deadline = time.monotonic() + STOP_TIME
+        for x in mine:
+            left = deadline - time.monotonic()
+            if left < 1:
+                break
 
-        heads = set(re.findall(r"^HEAD (\w+)$", git("worktree", "list", "--porcelain", cwd=top), re.M))
-        fields = "number,isDraft,headRefOid,statusCheckRollup"
-        out = subprocess.run(
-            ["gh", "pr", "list", "--state", "open", "--json", fields],
-            cwd=top, capture_output=True, text=True, timeout=20, check=True,
-        ).stdout
-        running, failed = [], []
-        for pr in json.loads(out):
-            if pr.get("isDraft") or pr["headRefOid"] not in heads:
-                continue
+            try:
+                x.look(timeout=left)
+            except Exception as e:
+                print(f"pr-gate: stop hook skips {x.branch}: {e}", file=sys.stderr)
 
-            for c in pr["statusCheckRollup"]:
-                name = f"#{pr['number']} {c.get('name') or c.get('context')}"
-                state = c.get("status") if c.get("status") != "COMPLETED" else c.get("conclusion")
-                state = state or c.get("state")
-                if state in WAITING:
-                    running.append(name)
-                elif state in BAD:
-                    failed.append(name)
+        now = time.time()
+        running = [x for x in mine if x.state == "running" and now - x.entry["at"] < STUCK]
+        failed = [x for x in mine if x.state == "failed" and not x.reported and not running]
+        done = [x for x in mine if x.done]
     except Exception as e:
         print(f"pr-gate: stop hook error, not blocking: {e}", file=sys.stderr)
         return 0
 
+    if failed or done:
+        try:
+            with owners_locked(wait=max(0.5, deadline - time.monotonic())) as st:
+                for x in failed + done:
+                    brs = st.get(x.repo, {})
+                    if brs.get(x.branch) != x.entry:  # pushed or claimed again meanwhile
+                        continue
+
+                    if x.done:
+                        del brs[x.branch]
+                    else:
+                        brs[x.branch]["reported"] = x.pr["headRefOid"]
+        except Exception as e:
+            print(f"pr-gate: stop hook can't save, not blocking on red CI: {e}", file=sys.stderr)
+            failed = []
+
     if running:
+        names = ", ".join(f"{x.name} ({', '.join(x.waiting)})" for x in running)
         reason = (
-            f"pr-gate: CI is still running ({', '.join(running)}). Wait for it with"
-            f" `gh pr checks <number> --watch` in {top} (10-minute timeout) and report the result;"
-            " don't call the work done before CI is green."
+            f"pr-gate: CI is still running ({names}). Wait for it with `gh pr checks <number>"
+            " -R <repo> --watch` (10-minute timeout) and report the result, or run `pr-gate"
+            " release <number>` in its repository if it can't finish; don't call the work done"
+            " before CI is green."
         )
-    elif failed and not pld.get("stop_hook_active"):
+    elif failed:
+        names = ", ".join(f"{x.name} ({', '.join(x.bad)})" for x in failed)
         reason = (
-            f"pr-gate: CI failed ({', '.join(failed)}). Look at it (`gh run view --log-failed`),"
-            " fix it, or tell the person plainly that CI is red."
+            f"pr-gate: CI failed ({names}). Look at it (`gh run view -R <repo> --log-failed`), fix"
+            " it, or tell the person plainly that CI is red."
         )
     else:
         return 0
@@ -498,13 +775,137 @@ def stop() -> int:
     return 0
 
 
+# MARK: Commands
+
+
+def here() -> tuple[Path, str, str]:
+    """This repository's top, git common dir and github.com slug."""
+    top = Path(git("rev-parse", "--show-toplevel", cwd=Path.cwd()))
+    try:
+        m = SLUG.search(git("config", "--get", "remote.origin.url", cwd=top))
+    except RuntimeError:
+        m = None
+
+    if m is None:
+        raise RuntimeError("not a github.com/vladkens repository")
+
+    return top, git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=top), m[1]
+
+
+def session() -> str:
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not sid:
+        raise RuntimeError("no Claude Code session here (CLAUDE_CODE_SESSION_ID is unset)")
+
+    return sid
+
+
+def ago(at: float) -> str:
+    s = int(time.time() - at)
+    return f"{s // 3600}h{s % 3600 // 60:02d}m" if s >= 3600 else f"{s // 60}m"
+
+
+def target_pr(slug: str, target: str) -> tuple[str, dict | None]:
+    """The branch a PR number or a branch name stands for, and its PR (the open one by name)."""
+    if re.fullmatch(r"#?\d+", target):
+        pr = gh("pr", "view", target.lstrip("#"), "-R", slug, "--json", PR_FIELDS)
+        return pr["headRefName"], pr
+
+    prs = gh("pr", "list", "-R", slug, "--head", target, "--state", "open", "--json", PR_FIELDS)
+    return target, prs[0] if prs else None
+
+
+def claim(target: str) -> int:
+    sid = session()
+    top, common, slug = here()
+    branch, pr = target_pr(slug, target)
+    if pr and pr["state"] != "OPEN":
+        print(f"pr-gate: #{pr['number']} is {pr['state'].lower()}; nothing to watch.")
+        return 1
+
+    sha = pr["headRefOid"] if pr else ""
+    for ref in ([] if sha else [f"refs/remotes/origin/{branch}", f"refs/heads/{branch}"]):
+        try:
+            sha = git("rev-parse", "--verify", "-q", ref, cwd=top)
+            break
+        except RuntimeError:
+            pass
+
+    with owners_locked() as st:
+        prev = st.get(common, {}).get(branch)
+        st.setdefault(common, {})[branch] = {"session_id": sid, "at": int(time.time()), "sha": sha}
+
+    name = f"{branch} (#{pr['number']})" if pr else f"{branch} (no open PR yet)"
+    was = f", not {prev['session_id'][:8]}" if prev and prev["session_id"] != sid else ""
+    print(f"pr-gate: this session owns {name} now{was}.")
+    return 0
+
+
+def release(target: str) -> int:
+    _, common, slug = here()
+    branch = target_pr(slug, target)[0] if re.fullmatch(r"#?\d+", target) else target
+    with owners_locked() as st:
+        prev = st.get(common, {}).pop(branch, None)
+
+    if prev is None:
+        print(f"pr-gate: nobody owns {branch}.")
+        return 1
+
+    who = prev["session_id"]
+    who = "this session" if who == os.environ.get("CLAUDE_CODE_SESSION_ID") else who[:8]
+    print(f"pr-gate: released {branch} (owned by {who}); nobody owns it now.")
+    return 0
+
+
+def status(every: bool) -> int:
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    st = owners()
+    if every:
+        common = here()[1]
+        rows = [Owned(common, b, e) for b, e in st.get(common, {}).items()]
+    else:
+        sid = session()
+        own = [(r, b, e) for r, brs in st.items() for b, e in brs.items()]
+        rows = [Owned(r, b, e) for r, b, e in own if e["session_id"] == sid]
+
+    if not rows:
+        print(f"pr-gate: {'nobody owns a branch here' if every else 'this session owns nothing'}.")
+        return 0
+
+    for x in sorted(rows, key=lambda x: -x.entry["at"]):
+        ci = "expired, not watched"
+        if fresh(x.entry):
+            try:
+                x.look()
+                ci = x.state
+            except Exception as e:
+                ci = f"unknown ({e})"
+
+        if x.state == "running":
+            ci = f"CI running: {', '.join(x.waiting)}"
+        elif x.state == "failed":
+            ci = f"CI failed: {', '.join(x.bad)}" + (", told once" if x.reported else "")
+
+        cols = [Path(x.repo).parent.name, x.branch, f"#{x.pr['number']}" if x.pr else "-"]
+        if every:
+            who = x.entry["session_id"]
+            cols.append("this session" if who == sid else who[:8])
+
+        print("  ".join([*cols, f"{ago(x.entry['at'])} ago", ci]))
+
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__.splitlines()[0],
-        epilog="Thresholds: style over {}, deep over {} lines, at most {} deep reviews.".format(
-            STYLE_LINES, DEEP_LINES, DEEP_MAX
-        ),
+        epilog="Thresholds: style over {}, deep over {} lines, at most {} deep reviews; owners"
+        " watch for {} h.".format(STYLE_LINES, DEEP_LINES, DEEP_MAX, OWN_TTL // 3600),
     )
+    cmds = ("claim", "release", "status")
+    parser.add_argument("cmd", nargs="?", choices=cmds, help="who watches a PR's CI")
+    parser.add_argument("target", nargs="?", metavar="PR|BRANCH", help="for claim and release")
+    parser.add_argument("--all", action="store_true", help="status: every owner in this repository")
     parser.add_argument(
         "--accept", metavar="REASON", action="append", help="reject one open finding with a reason"
     )
@@ -516,6 +917,22 @@ def main() -> int:
 
     if args.stop:
         return stop()
+
+    if args.cmd in ("claim", "release") and not args.target:
+        parser.error(f"{args.cmd} needs a PR number or a branch")
+
+    if args.cmd:
+        try:
+            match args.cmd:
+                case "claim":
+                    return claim(args.target)
+                case "release":
+                    return release(args.target)
+                case _:
+                    return status(args.all)
+        except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as e:
+            print(f"pr-gate: {e}", file=sys.stderr)
+            return 1
 
     repo = Repo.open(Path.cwd(), fetch=True)
     if repo is None:

@@ -4,3 +4,4 @@
 .dotter/local.toml
 .DS_Store
 output/
+__pycache__/

@@ -39,7 +39,8 @@ REPOS = {
     "wavo": ["test"],
     "wavo-app": ["test"],
     "nimbo": ["test"],
-    "macmon": ["test"],  # from pull.yml
+    "shipo": ["test (ubuntu-latest)", "test (macos-latest)", "test (windows-latest)"],  # by OS
+    "macmon": ["test"],
     "cctrail": ["test"],
     "clankr": ["test"],
     "unjar": ["test"],

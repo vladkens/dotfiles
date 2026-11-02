@@ -31,6 +31,17 @@
   },
   "model": "opus",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script ~/.claude/skills/promo/scripts/promo.py check 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -49,6 +60,25 @@
             "type": "command",
             "command": "~/.local/bin/pr-gate --hook",
             "if": "Bash(git -C * push*)"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.local/bin/pr-gate --hook",
+            "if": "Bash(git push*)",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/.local/bin/pr-gate --hook",
+            "if": "Bash(git -C * push*)",
+            "timeout": 10
           }
         ]
       }

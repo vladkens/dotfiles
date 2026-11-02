@@ -5,6 +5,7 @@ font-style = Medium
 font-size = 13
 
 macos-option-as-alt = left
+mouse-scroll-multiplier = discrete:0.75
 
 # font-feature = -liga
 # font-feature = -clig
