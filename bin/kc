@@ -1,0 +1,389 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.13"
+# dependencies = []
+# ///
+
+import argparse
+import getpass
+import os
+import re
+import secrets
+import shutil
+import string
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import NoReturn
+
+SECURITY = "/usr/bin/security"
+NOT_FOUND = 44
+LINE_MAX = 4096
+GLOBAL = "global"
+REF = "kc://"
+HOME = str(Path.home())
+NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+LINE_RE = re.compile(r"(\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=)(.*)")
+
+
+def fail(message: str, code: int = 1) -> NoReturn:
+    print(f"kc: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def key_name(x: str) -> str:
+    if not NAME_RE.fullmatch(x):
+        raise argparse.ArgumentTypeError(f"invalid name {x!r}, use letters, digits and _")
+
+    return x
+
+
+def positive(x: str) -> int:
+    n = int(x)
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+
+    return n
+
+
+def label(name: str, sc: str) -> str:
+    return f"kc:{name} ({sc})"
+
+
+def short(path: Path) -> str:
+    x = str(path)
+    return "~" + x[len(HOME) :] if x == HOME or x.startswith(HOME + "/") else x
+
+
+def git() -> tuple[Path, Path] | None:
+    cmd = ["git", "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"]
+    try:
+        rs = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    except FileNotFoundError:
+        return None
+
+    if rs.returncode != 0:
+        return None
+
+    top, common = map(Path, rs.stdout.splitlines())
+    return top, common.parent if common.name == ".git" else top
+
+
+def home(is_global: bool) -> str:
+    if is_global:
+        return GLOBAL
+
+    info = git()
+    return short(info[1] if info is not None else Path.cwd())
+
+
+def cascade(is_global: bool = False) -> list[str]:
+    if is_global:
+        return [GLOBAL]
+
+    cwd = Path.cwd()
+    dirs = [cwd, *cwd.parents]
+    info = git()
+    if info is not None and info[0] in dirs:
+        top, root = info
+        dirs = [*dirs[: dirs.index(top) + 1], root, *root.parents]
+
+    return [*dict.fromkeys(map(short, dirs)), GLOBAL]
+
+
+def blob(x: bytes) -> bytes | None:
+    if x.startswith(b"0x"):
+        return bytes.fromhex(x[2:].split(b" ")[0].decode())
+
+    if len(x) >= 2 and x.startswith(b'"') and x.endswith(b'"'):
+        return x[1:-1]
+
+    if x.strip() == b"":
+        return b""
+
+    return None
+
+
+def index() -> set[tuple[str, str]]:
+    rs = subprocess.run([SECURITY, "dump-keychain"], check=False, capture_output=True)
+    if rs.returncode != 0:
+        fail("cannot read the keychain")
+
+    def attr(block: bytes, name: bytes) -> str:
+        m = re.search(rb'^\s+"' + name + rb'"<blob>=(.*)$', block, re.MULTILINE)
+        x = blob(m[1]) if m is not None else None
+        return x.decode(errors="replace") if x is not None else ""
+
+    found = set()
+    for block in re.split(rb"^keychain: ", rs.stdout, flags=re.MULTILINE):
+        if b'\nclass: "genp"' not in block:
+            continue
+
+        svc, sc = attr(block, b"svce"), attr(block, b"acct")
+        name = svc.removeprefix("kc:")
+        if svc.startswith("kc:") and NAME_RE.fullmatch(name) and sc:
+            found.add((name, sc))
+
+    return found
+
+
+def find(name: str, scopes: list[str], idx: set[tuple[str, str]]) -> str | None:
+    return next((sc for sc in scopes if (name, sc) in idx), None)
+
+
+def read(name: str, sc: str) -> bytes:
+    cmd = [SECURITY, "find-generic-password", "-a", sc, "-s", f"kc:{name}", "-g"]
+    rs = subprocess.run(cmd, check=False, capture_output=True)
+    if rs.returncode == NOT_FOUND:
+        fail(f"no {label(name, sc)}")
+
+    prefix = b"password: "
+    lines = [x.removeprefix(prefix) for x in rs.stderr.split(b"\n") if x.startswith(prefix)]
+    value = blob(lines[0]) if rs.returncode == 0 and lines else None
+    if value is None:
+        fail(f"cannot read {label(name, sc)}")
+
+    return value
+
+
+def quote(x: str) -> str:
+    x = x.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{x}"'
+
+
+def store(name: str, sc: str, value: str, quiet: bool = False) -> bool:
+    args = ["-U", "-a", sc, "-s", f"kc:{name}", "-l", label(name, sc), "-w", value]
+    line = f"add-generic-password {' '.join(map(quote, args))}\n".encode()
+    ok = "\n" not in value and "\0" not in value and len(line) <= LINE_MAX
+    if ok:
+        rs = subprocess.run([SECURITY, "-i"], check=False, input=line, capture_output=True)
+        ok = rs.returncode == 0
+
+    if not ok and not quiet:
+        fail(f"{label(name, sc)} not saved")
+
+    return ok
+
+
+def entries(lines: list[str]) -> list[tuple[int, str, str | None, int, int]]:
+    found, open_quote = [], None
+    for i, line in enumerate(lines):
+        if open_quote is not None:
+            open_quote = None if open_quote in line else open_quote
+            continue
+
+        m = LINE_RE.match(line)
+        if m is None:
+            continue
+
+        rest = m[3]
+        start = m.end(1) + len(rest) - len(rest.lstrip())
+        raw = rest.lstrip()
+        if raw[:1] not in ("'", '"'):
+            value = re.split(r"\s#", rest, maxsplit=1)[0].strip()
+            found.append((i, m[2], value, start, start + len(value)))
+            continue
+
+        close = raw.find(raw[0], 1)
+        if close == -1:
+            open_quote = raw[0]
+            found.append((i, m[2], None, start, start))
+            continue
+
+        value = raw[1:close]
+        clean = "\\" not in value and re.fullmatch(r"(\s+#.*)?\s*", raw[close + 1 :])
+        found.append((i, m[2], value if clean else None, start, start + close + 1))
+
+    return found
+
+
+def load(path: Path) -> list[str]:
+    try:
+        return path.read_text(encoding="utf-8", newline="").split("\n")
+    except (OSError, UnicodeError):
+        fail(f"cannot read {path}")
+
+
+def cmd_set(args: argparse.Namespace) -> None:
+    sc = home(args.g)
+    try:
+        value = getpass.getpass(f"{label(args.name, sc)}: ")
+    except (EOFError, KeyboardInterrupt):
+        fail(f"{label(args.name, sc)} not saved")
+
+    store(args.name, sc, value)
+    print(f"{label(args.name, sc)} saved")
+
+
+def cmd_gen(args: argparse.Namespace) -> None:
+    sc = home(args.g)
+    if (args.name, sc) in index():
+        fail(f"{label(args.name, sc)} exists, kc rm it first")
+
+    alphabet = string.ascii_letters + string.digits
+    value = "".join(secrets.choice(alphabet) for _ in range(args.length))
+    store(args.name, sc, value)
+    subprocess.run(["pbcopy"], input=value.encode(), check=True)
+    print(f"{label(args.name, sc)} saved and copied")
+
+
+def lookup(args: argparse.Namespace) -> tuple[str, bytes]:
+    sc = find(args.name, cascade(args.g), index())
+    if sc is None:
+        fail(f"no kc:{args.name}")
+
+    return sc, read(args.name, sc)
+
+
+def cmd_get(args: argparse.Namespace) -> None:
+    if sys.stdout.isatty():
+        hint = f"kc copy {args.name}{' -g' if args.g else ''}"
+        fail(f"not printing a secret to the terminal, use {hint}")
+
+    sys.stdout.buffer.write(lookup(args)[1])
+    sys.stdout.buffer.flush()
+
+
+def cmd_copy(args: argparse.Namespace) -> None:
+    sc, value = lookup(args)
+    subprocess.run(["pbcopy"], input=value, check=True)
+    print(f"{label(args.name, sc)} copied")
+
+
+def cmd_ls(args: argparse.Namespace) -> None:
+    rows = index()
+    if not args.all:
+        scopes = cascade()
+        rows = {x for x in rows if x[1] in scopes}
+
+    width = max((len(name) for name, _ in rows), default=0)
+    for name, sc in sorted(rows):
+        print(f"{name:<{width}}  {sc}")
+
+
+def cmd_rm(args: argparse.Namespace) -> None:
+    sc = home(args.g)
+    cmd = [SECURITY, "delete-generic-password", "-a", sc, "-s", f"kc:{args.name}"]
+    rs = subprocess.run(cmd, check=False, capture_output=True)
+    if rs.returncode == NOT_FOUND:
+        fail(f"no {label(args.name, sc)}")
+
+    if rs.returncode != 0:
+        fail(f"cannot delete {label(args.name, sc)}")
+
+
+def cmd_run(args: argparse.Namespace) -> None:
+    if not args.command:
+        fail("usage: kc run [NAME...] [--env-file FILE] -- CMD [ARGS...]", 2)
+
+    scopes, idx = cascade(), index()
+    dirs = scopes[:-1]
+    refs = {k: v for k, v in os.environ.items() if v.startswith(REF)}
+    path = Path(args.env_file or ".env")
+    if args.env_file or path.exists():
+        refs |= {x[1]: x[2] for x in entries(load(path)) if (x[2] or "").startswith(REF)}
+
+    want = {name: (name, dirs) for name, sc in idx if sc in dirs and name not in os.environ}
+    want |= {name: (name, scopes) for name in args.names}
+    want |= {k: (v.removeprefix(REF), scopes) for k, v in refs.items()}
+
+    found = {}
+    for key, (name, where) in want.items():
+        sc = find(name, where, idx) if NAME_RE.fullmatch(name) else None
+        if sc is None:
+            fail(f"{key}: no {REF}{name}")
+
+        found[key] = (name, sc)
+
+    values = {x: read(*x).decode(errors="surrogateescape") for x in set(found.values())}
+    env = os.environ | {key: values[x] for key, x in found.items()}
+
+    try:
+        os.execvpe(args.command[0], args.command, env)
+    except FileNotFoundError:
+        fail(f"{args.command[0]}: command not found", 127)
+    except (OSError, ValueError):
+        fail(f"cannot run {args.command[0]}", 126)
+
+
+def cmd_import(args: argparse.Namespace) -> None:
+    sc, path = home(False), Path(args.file).resolve()
+    lines = load(path)
+    imported, skipped = [], []
+    for i, key, value, start, end in entries(lines):
+        if value is not None and (not value or value.startswith(REF)):
+            continue
+
+        if value is None or not store(key, sc, value, quiet=True):
+            skipped.append(key)
+            continue
+
+        imported.append(key)
+        lines[i] = f"{lines[i][:start]}{REF}{key}{lines[i][end:]}"
+
+    if imported:
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+                f.write("\n".join(lines))
+
+            shutil.copymode(path, tmp)
+            os.replace(tmp, path)
+        except BaseException:
+            os.unlink(tmp)
+            raise
+
+        print(f"imported into {sc}: {', '.join(imported)}")
+
+    if skipped:
+        print(f"skipped: {', '.join(skipped)}")
+        raise SystemExit(1)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="kc", description="Keep secrets in the login Keychain, per directory or global."
+    )
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    def add(name: str, func, text: str, length: bool = False) -> None:
+        p = sub.add_parser(name, help=text)
+        p.add_argument("name", type=key_name, help="key name, e.g. HF_TOKEN")
+        if length:
+            p.add_argument("length", type=positive, nargs="?", default=32, help="default 32")
+
+        p.add_argument("-g", action="store_true", help="use only the global scope")
+        p.set_defaults(func=func)
+
+    add("set", cmd_set, "prompt for a value and save it")
+    add("gen", cmd_gen, "save a random alphanumeric value and copy it", length=True)
+    add("get", cmd_get, "write a value to stdout (not to a terminal)")
+    add("copy", cmd_copy, "copy a value to the clipboard")
+    add("rm", cmd_rm, "delete a key from this directory's scope")
+
+    p = sub.add_parser("ls", help="list the keys visible here")
+    p.add_argument("-a", "--all", action="store_true", help="list every scope")
+    p.set_defaults(func=cmd_ls)
+
+    p = sub.add_parser("run", help="run a command with keys and kc:// references resolved")
+    p.add_argument("names", type=key_name, nargs="*", metavar="NAME")
+    p.add_argument("--env-file", metavar="FILE", help="default .env if it exists")
+    p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser("import", help="move KEY=VALUE lines of a file into the Keychain")
+    p.add_argument("file", nargs="?", default=".env", help="default .env")
+    p.set_defaults(func=cmd_import)
+
+    argv, command = sys.argv[1:], []
+    if argv[:1] == ["run"] and "--" in argv:
+        i = argv.index("--")
+        argv, command = argv[:i], argv[i + 1 :]
+
+    args = parser.parse_args(argv)
+    args.command = command
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
