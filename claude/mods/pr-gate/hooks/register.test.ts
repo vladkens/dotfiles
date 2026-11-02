@@ -198,7 +198,7 @@ test("runs a review as a spawned child, its progress on the status line", async 
   expect(spawns[0]?.argv.slice(4)).toEqual(["review", "--accept=- a.py:1: wrong: it is right"])
   expect(spawns[0]?.cwd).toBe("/repo")
   expect(res.deny).toContain("findings to handle")
-  expect(statuses).toEqual(["pr-gate: quick review of 3 changed lines…", undefined])
+  expect(statuses).toEqual(["quick review of 3 changed lines…", undefined])
 })
 
 test("answers a passed review as the tool's result", async ($, on) => {

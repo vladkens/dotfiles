@@ -168,7 +168,7 @@ export const register: Register = on => {
       for await (const { stream, text: piece } of child) {
         text += piece
         const line = piece.trim().split("\n").at(-1)
-        if (stream === "stderr" && line) $.ui.status(line)
+        if (stream === "stderr" && line) $.ui.status(line.replace(/^pr-gate: /, ""))
       }
 
       return answer((await child.result).code, text)
