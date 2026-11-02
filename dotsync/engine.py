@@ -930,6 +930,24 @@ def execute(command: list[str], **options: object) -> None:
     subprocess.run(command, check=True, **options)
 
 
+def run_quiet(label: str, command: list[str], **options: object) -> None:
+    # Output is shown only on failure; stdin stays on the terminal for prompts like sudo's.
+    print(paint(f"▶ {label}", "1;35"), end="", flush=True)
+    result = subprocess.run(
+        command, check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, **options
+    )
+    if result.returncode == 0:
+        print(f" {paint('ok', '2;32')}", flush=True)
+        return
+
+    print(f" {paint('failed', '31')}")
+    for line in result.stdout.splitlines():
+        print(f"    {line}")
+
+    sys.stdout.flush()
+    raise subprocess.CalledProcessError(result.returncode, command, result.stdout)
+
+
 def apply(steps: list[Step], brew: str | None, env: dict[str, str]) -> None:
     formulae = [package for step in steps for package in step.brew]
     casks = [package for step in steps for package in step.cask]
@@ -964,17 +982,16 @@ def apply(steps: list[Step], brew: str | None, env: dict[str, str]) -> None:
         install_job(job)
 
     state = read_state()
-    traced = {**env, "PS4": paint("$ ", "36") + " "}
     for step in steps:
         if step.setup_reason:
-            heading(f"setup {step.module.name}")
             setup = dedent(step.module.setup)
-            subprocess.run(["sh", "-eux", "-c", setup], cwd=REPO, env=traced, check=True)
+            run_quiet(f"setup {step.module.name}", ["sh", "-eu", "-c", setup], cwd=REPO, env=env)
             state[step.module.name] = setup_hash(step.module)
             write_state(state)
 
         if step.cargo:
-            execute(["cargo", "install", "--locked", "--quiet", *step.cargo], env=env)
+            command = ["cargo", "install", "--locked", "--quiet", *step.cargo]
+            run_quiet(f"cargo {' '.join(step.cargo)}", command, env=env)
 
 
 # MARK: Run

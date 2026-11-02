@@ -470,10 +470,12 @@ class ToolsTest(TempHome):
         env = self.fake("cargo", f'echo "cargo $*" >> "{log}"')
         module = Module("m", cargo=["shipo"], setup=f'echo setup >> "{log}"')
 
-        with mock.patch("sys.stdout"):
+        out = io.StringIO()
+        with redirect_stdout(out):
             apply(make_plan([module], NOTHING, {}), None, env)
 
         self.assertEqual(log.read_text(), "setup\ncargo install --locked --quiet shipo\n")
+        self.assertEqual(out.getvalue(), "▶ setup m ok\n▶ cargo shipo ok\n")
 
 
 class SetupReasonTest(Clean):
@@ -631,13 +633,32 @@ class ApplyTest(TempHome):
 
         self.assertEqual((self.home / "runs.txt").read_text(), "run\nrun\n")
 
-    def test_failed_setup_is_not_recorded(self) -> None:
-        module = Module("m", setup="exit 3")
+    def test_setup_is_quiet(self) -> None:
+        module = Module("m", setup="echo hidden\necho hidden too >&2")
 
-        with mock.patch("sys.stdout"), self.assertRaises(subprocess.CalledProcessError):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            apply(make_plan([module], NOTHING, {}), None, dict(os.environ))
+
+        self.assertEqual(out.getvalue(), "▶ setup m ok\n")
+
+    def test_failed_setup_shows_output_and_is_not_recorded(self) -> None:
+        module = Module("m", setup="echo one\necho two >&2\nexit 3\necho never")
+
+        out = io.StringIO()
+        with redirect_stdout(out), self.assertRaises(subprocess.CalledProcessError) as raised:
             apply(make_plan([module], NOTHING, read_state()), None, dict(os.environ))
 
+        self.assertEqual(out.getvalue(), "▶ setup m failed\n    one\n    two\n")
+        self.assertEqual(raised.exception.returncode, 3)
         self.assertEqual(read_state(), {})
+
+    def test_setup_fails_on_unset_variable(self) -> None:
+        module = Module("m", setup='echo "$UNSET_DOTSYNC_VAR"')
+        env = {k: v for k, v in os.environ.items() if k != "UNSET_DOTSYNC_VAR"}
+
+        with redirect_stdout(io.StringIO()), self.assertRaises(subprocess.CalledProcessError):
+            apply(make_plan([module], NOTHING, {}), None, env)
 
 
 DOCK = Default("com.apple.dock", "tilesize", 56)
