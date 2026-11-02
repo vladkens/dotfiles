@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import filecmp
 import hashlib
 import json
@@ -308,22 +309,28 @@ def same_content(source: Path, target: Path) -> bool:
     if source.is_file() and target.is_file():
         return filecmp.cmp(source, target, shallow=False)
 
-    if not (source.is_dir() and target.is_dir()):
-        return False
+    return source.is_dir() and target.is_dir() and not dir_changes(source, target)
 
-    def equal(compared: filecmp.dircmp) -> bool:
-        if compared.left_only or compared.right_only or compared.common_funny:
-            return False
 
+def dir_changes(source: Path, target: Path) -> list[tuple[str, str]]:
+    changes = []
+
+    def walk(compared: filecmp.dircmp, prefix: str) -> None:
         _, mismatch, errors = filecmp.cmpfiles(
             compared.left, compared.right, compared.common_files, shallow=False
         )
-        if mismatch or errors:
-            return False
+        for symbol, names in (
+            ("~", mismatch + errors + compared.common_funny),
+            ("+", compared.left_only),
+            ("-", compared.right_only),
+        ):
+            changes.extend((prefix + name, symbol) for name in names)
 
-        return all(equal(sub) for sub in compared.subdirs.values())
+        for name, sub in compared.subdirs.items():
+            walk(sub, f"{prefix}{name}/")
 
-    return equal(filecmp.dircmp(source, target, ignore=[]))
+    walk(filecmp.dircmp(source, target, ignore=[]), "")
+    return sorted(changes)
 
 
 def module_links(module: Module) -> list[tuple[Path, Path]]:
@@ -755,6 +762,10 @@ def make_plan(
 
 # MARK: Output
 
+DIFF_LINES = 20
+DIFF_PATHS = 10
+LINK_COLORS = {"~": "33", "+": "32", "-": "31"}
+DIFF_COLORS = (("---", "1"), ("+++", "1"), ("@@", "2"), ("-", "31"), ("+", "32"))
 LINK_STYLES = {
     "new": ("+", "32", "", "to link"),
     "same": ("~", "33", "", "to replace (same content)"),
@@ -777,15 +788,73 @@ def action(symbol: str, color: str, text: str, note: str = "") -> str:
     return f"{line} {paint(note, '2')}" if note else line
 
 
+def text_lines(path: Path) -> list[str] | None:
+    try:
+        data = path.read_bytes()
+        return None if b"\0" in data else data.decode().splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def file_diff(source: Path, target: Path) -> list[str] | None:
+    current, wanted = text_lines(target), text_lines(source)
+    if current is None or wanted is None:
+        return None
+
+    labels = (tilde(target), str(source.relative_to(REPO)))
+    return list(difflib.unified_diff(current, wanted, *labels, n=2, lineterm=""))
+
+
+def capped(lines: list[str]) -> list[str]:
+    shown = []
+    for line in lines[:DIFF_LINES]:
+        color = next((c for prefix, c in DIFF_COLORS if line.startswith(prefix)), "")
+        shown.append(paint(line, color) if color else line)
+
+    if len(lines) > DIFF_LINES:
+        shown.append(paint(f"… {len(lines) - DIFF_LINES} more lines", "2"))
+
+    return shown
+
+
+def link_diff(source: Path, target: Path) -> list[str]:
+    if source.is_dir() != target.is_dir():
+        kinds = ("directory", "file") if target.is_dir() else ("file", "directory")
+        return [paint(f"a {kinds[0]} here, a {kinds[1]} in the repository", "2")]
+
+    if not source.is_dir():
+        lines = file_diff(source, target)
+        if lines is None:
+            return [paint("binary file differs", "2")]
+
+        return capped(lines) or [paint("differs only in line endings", "2")]
+
+    changes = dir_changes(source, target)
+    lines = [
+        f"{paint(symbol, LINK_COLORS[symbol])} {path}" for path, symbol in changes[:DIFF_PATHS]
+    ]
+    if len(changes) > DIFF_PATHS:
+        lines.append(paint(f"… {len(changes) - DIFF_PATHS} more files", "2"))
+
+    diffs = []
+    for path, symbol in changes:
+        if symbol == "~" and (source / path).is_file() and (target / path).is_file():
+            diffs += file_diff(source / path, target / path) or []
+
+    return lines + capped(diffs)
+
+
 def step_actions(step: Step) -> list[str]:
     lines = []
     for kind, packages in (("brew", step.brew), ("cask", step.cask), ("cargo", step.cargo)):
         if packages:
             lines.append(action("+", "32", f"{kind}: {' '.join(packages)}"))
 
-    for _, target, status in step.links:
+    for source, target, status in step.links:
         symbol, color, note, _ = LINK_STYLES[status]
         lines.append(action(symbol, color, tilde(target), note))
+        if status == "differs":
+            lines += [f"      {line}" for line in link_diff(source, target)]
 
     for setting, current in step.defaults:
         lines.append(action("~", "33", change_text(setting, current)))
@@ -811,11 +880,6 @@ def summary(steps: list[Step]) -> str:
     return f"Plan: {', '.join(parts)}." if parts else "No changes."
 
 
-def diff_command(source: Path, target: Path) -> str:
-    home_path = shlex.quote(str(target.relative_to(Path.home())))
-    return f"diff -ru ~/{home_path} {shlex.quote(str(source.relative_to(REPO)))}"
-
-
 def show_plan(steps: list[Step], unused: list[Module]) -> None:
     unchanged = []
     for step in steps:
@@ -829,12 +893,6 @@ def show_plan(steps: list[Step], unused: list[Module]) -> None:
 
     if unchanged and len(unchanged) < len(steps):
         print(paint(f"no changes: {', '.join(unchanged)}", "2"))
-
-    differing = [link for step in steps for link in step.links if link[2] == "differs"]
-    if differing:
-        print(paint("compare, then move what you want to keep into the repository:", "1;31"))
-        for source, target, _ in differing:
-            print(f"  {diff_command(source, target)}")
 
     if unused:
         names = ", ".join(module.name for module in unused)

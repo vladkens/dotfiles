@@ -308,6 +308,88 @@ class LinksTest(TempHome):
         )
 
 
+class DiffTest(TempHome):
+    def actions(self, source: str, target: str) -> list[str]:
+        (step,) = make_plan([Module("m", files={source: target})], NOTHING, {})
+        with redirect_stdout(io.StringIO()):
+            return step_actions(step)
+
+    def test_file(self) -> None:
+        (self.repo / "config" / "app.conf").write_text("a\nb\nnew\nc\nd\ne\n")
+        (self.home / ".config" / "app.conf").write_text("a\nb\nold\nc\nd\ne\n")
+
+        self.assertEqual(
+            self.actions("config/app.conf", "~/.config/app.conf"),
+            [
+                "  ! ~/.config/app.conf (differs)",
+                "      --- ~/.config/app.conf",
+                "      +++ config/app.conf",
+                "      @@ -1,5 +1,5 @@",
+                "       a",
+                "       b",
+                "      -old",
+                "      +new",
+                "       c",
+                "       d",
+            ],
+        )
+
+    def test_long_diff_is_cut(self) -> None:
+        (self.repo / "config" / "app.conf").write_text("".join(f"new {i}\n" for i in range(30)))
+        (self.home / ".config" / "app.conf").write_text("old\n")
+
+        lines = self.actions("config/app.conf", "~/.config/app.conf")
+
+        self.assertEqual(len(lines), 1 + engine.DIFF_LINES + 1)
+        self.assertEqual(lines[-2:], ["      +new 15", "      … 14 more lines"])
+
+    def test_directory(self) -> None:
+        source = self.repo / "config"
+        (source / "sub").mkdir()
+        (source / "sub" / "a.txt").write_text("one\n")
+        (source / "added").write_text("")
+        target = self.home / ".config" / "dir"
+        shutil.copytree(source, target)
+        (target / "sub" / "a.txt").write_text("two\n")
+        (target / "app.conf").write_bytes(b"\0\1")
+        (target / "added").unlink()
+        (target / "extra").write_text("")
+
+        self.assertEqual(
+            self.actions("config", "~/.config/dir"),
+            [
+                "  ! ~/.config/dir (differs)",
+                "      + added",
+                "      ~ app.conf",
+                "      - extra",
+                "      ~ sub/a.txt",
+                "      --- ~/.config/dir/sub/a.txt",
+                "      +++ config/sub/a.txt",
+                "      @@ -1 +1 @@",
+                "      -two",
+                "      +one",
+            ],
+        )
+
+    def test_many_files_are_cut(self) -> None:
+        target = self.home / ".config" / "dir"
+        shutil.copytree(self.repo / "config", target)
+        for i in range(12):
+            (target / f"extra{i:02}").write_text("")
+
+        lines = self.actions("config", "~/.config/dir")
+
+        self.assertEqual(lines[-2:], ["      - extra09", "      … 2 more files"])
+
+    def test_binary(self) -> None:
+        (self.repo / "config" / "app.conf").write_bytes(b"\xff\xfe")
+        (self.home / ".config" / "app.conf").write_text("text\n")
+
+        self.assertEqual(
+            self.actions("config/app.conf", "~/.config/app.conf")[1:], ["      binary file differs"]
+        )
+
+
 class PlanTest(TempHome):
     def test_installed_packages_are_skipped(self) -> None:
         module = Module("m", brew=["git", "umputun/apps/revdiff", "fish"], cask=["zed"])
