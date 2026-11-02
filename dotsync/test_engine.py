@@ -329,6 +329,7 @@ class PlanTest(TempHome):
 
     def test_each_entry_of_a_folder(self) -> None:
         (self.repo / "config" / ".DS_Store").write_text("")
+        (self.repo / "config" / "__pycache__").mkdir()
         (self.repo / "config" / "tool").write_text("")
         module = Module("m", files={"config/*": "~/bin"})
 
@@ -660,18 +661,31 @@ class SameTest(unittest.TestCase):
         self.assertFalse(same(2, 2.0))
         self.assertFalse(same(None, False))
 
+    def test_numbers_compare_by_value(self) -> None:
+        for current, wanted in [(0, False), (1, True), (True, 1), (25.0, 25), (1.0, True)]:
+            self.assertTrue(same(current, wanted, numbers=True), (current, wanted))
+
+        for current, wanted in [(2, True), (0, True), (25.5, 25), ("1", 1), (1, "1"), (None, 0)]:
+            self.assertFalse(same(current, wanted, numbers=True), (current, wanted))
+
+        self.assertTrue(same(0.05000000074505806, 0.05, numbers=True))
+        self.assertFalse(same(0.06, 0.05, numbers=True))
+
     def test_float32_precision(self) -> None:
         self.assertTrue(same(0.05000000074505806, 0.05))
         self.assertTrue(same(1.5, 1.5))
         self.assertFalse(same(0.06, 0.05))
-        self.assertFalse(same(2, 2.0))
 
     def test_nested_dicts_ignore_order(self) -> None:
         wanted = {"enabled": True, "value": {"type": "standard", "parameters": [1, 2]}}
         current = {"value": {"parameters": [1, 2], "type": "standard"}, "enabled": True}
+        floats = {**current, "enabled": 1, "value": {"type": "standard", "parameters": [1.0, 2]}}
 
         self.assertTrue(same(current, wanted))
         self.assertFalse(same({**current, "enabled": 1}, wanted))
+        self.assertTrue(same(floats, wanted, numbers=True))
+        self.assertFalse(same({**floats, "enabled": False}, wanted, numbers=True))
+        self.assertFalse(same({**floats, "value": {"parameters": [1, 3]}}, wanted, numbers=True))
         self.assertFalse(same({**current, "extra": 1}, wanted))
 
     def test_value_types(self) -> None:
@@ -687,8 +701,8 @@ class DefaultsTest(Clean):
             {
                 "com.apple.dock": {"tilesize": 56},
                 "NSGlobalDomain": {
-                    "KeyRepeat": 5,
-                    "com.apple.keyboard.fnState": 1,
+                    "KeyRepeat": 5.0,
+                    "com.apple.keyboard.fnState": 0,
                     "QLPanelAnimationDuration": 0.05000000074505806,
                 },
                 "com.apple.symbolichotkeys": {"AppleSymbolicHotKeys": {"61": {"enabled": False}}},
@@ -698,7 +712,7 @@ class DefaultsTest(Clean):
 
         (step,) = mac.plan(module)
 
-        self.assertEqual(step.defaults, [(FN, 1), (HOTKEY, {"enabled": False})])
+        self.assertEqual(step.defaults, [(FN, 0), (HOTKEY, {"enabled": False})])
         self.assertEqual(
             sorted(mac.exports),
             ["NSGlobalDomain", "com.apple.dock", "com.apple.symbolichotkeys"],
@@ -706,7 +720,7 @@ class DefaultsTest(Clean):
         self.assertEqual(
             step_actions(step),
             [
-                "  ~ -g com.apple.keyboard.fnState: 1 → True",
+                "  ~ -g com.apple.keyboard.fnState: 0 → True",
                 "  ~ hotkey 61: disabled → 65535, 80, 0",
             ],
         )

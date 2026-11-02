@@ -332,7 +332,7 @@ def module_links(module: Module) -> list[tuple[Path, Path]]:
         directory = REPO / source[:-2]
         if source.endswith("/*") and directory.is_dir():
             for entry in sorted(directory.iterdir()):
-                if not entry.name.startswith("."):
+                if not entry.name.startswith(".") and entry.name != "__pycache__":
                     pairs.append((entry, Path(target).expanduser() / entry.name))
         else:
             pairs.append((REPO / source, Path(target).expanduser()))
@@ -532,24 +532,26 @@ def float32(value: float) -> float:
     return struct.unpack("f", struct.pack("f", value))[0]
 
 
-def same(current: Any, wanted: Any) -> bool:
+def same(current: Any, wanted: Any, numbers: bool = False) -> bool:
     if isinstance(wanted, dict):
         return (
             isinstance(current, dict)
             and current.keys() == wanted.keys()
-            and all(same(current[key], value) for key, value in wanted.items())
+            and all(same(current[key], value, numbers) for key, value in wanted.items())
         )
 
     if isinstance(wanted, list):
         return (
             isinstance(current, list)
             and len(current) == len(wanted)
-            and all(same(c, w) for c, w in zip(current, wanted))
+            and all(same(c, w, numbers) for c, w in zip(current, wanted))
         )
 
-    # `defaults write -float` stores a float32, so 0.05 reads back as 0.05000000074505806.
-    if isinstance(wanted, float) and type(current) is float:
-        return float32(current) == float32(wanted)
+    # With `numbers`, bool, int and float match by value, as macOS may store 0 for False or 25.0
+    # for 25; `defaults write -float` stores a float32, so 0.05 reads back as 0.05000000074505806.
+    kinds = {type(current), type(wanted)}
+    if (numbers and kinds <= {bool, int, float}) or kinds == {float}:
+        return float32(current) == float32(wanted) if float in kinds else current == wanted
 
     return type(current) is type(wanted) and current == wanted
 
@@ -733,7 +735,7 @@ def make_plan(
                 domains[name] = read_domain(name)
 
             current = current_value(setting, domains[name])
-            if not same(current, setting.value):
+            if not same(current, setting.value, numbers=True):
                 defaults.append((setting, current))
 
         jobs = []
