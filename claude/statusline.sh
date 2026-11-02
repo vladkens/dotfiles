@@ -25,7 +25,9 @@ rate_limit() {
 
 model="$(get '.model.display_name')"
 dir="$(get '.workspace.current_dir')"
-dir="${dir/#"$HOME"/\~}"
+if [[ "$dir" == "$HOME" || "$dir" == "$HOME"/* ]]; then
+  dir="~${dir:${#HOME}}"
+fi
 
 context_remaining="$(get '(.context_window.remaining_percentage // 100)')% left"
 printf '%s · %s · %s' "$model" "$dir" "$context_remaining"
